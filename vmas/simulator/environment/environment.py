@@ -10,6 +10,7 @@ import torch
 from gym import spaces
 from torch import Tensor
 from vmas.simulator.core import Agent, TorchVectorizedObject
+from vmas.simulator.environment.record_statistics import EpisodeStatisticsRecorder
 from vmas.simulator.scenario import BaseScenario
 import vmas.simulator.utils
 from vmas.simulator.utils import (
@@ -43,6 +44,8 @@ class Environment(TorchVectorizedObject):
         dict_spaces: bool = False,
         multidiscrete_actions: bool = False,
         clamp_actions: bool = False,
+        reset_on_done: bool = True,
+        record_episode_statistics: bool = False,
         **kwargs,
     ):
         if multidiscrete_actions:
@@ -61,6 +64,12 @@ class Environment(TorchVectorizedObject):
         self.continuous_actions = continuous_actions
         self.dict_spaces = dict_spaces
         self.clamp_action = clamp_actions
+        self.reset_on_done = reset_on_done
+        self.record_episode_statistics = record_episode_statistics
+        if self.record_episode_statistics:
+            self.episode_statistics = EpisodeStatisticsRecorder(
+                n_agents=self.n_agents, n_envs=self.num_envs, device=self.device
+            )
 
         self.reset(seed=seed)
 
@@ -92,6 +101,9 @@ class Environment(TorchVectorizedObject):
         self.scenario.env_reset_world_at(env_index=None)
         self.steps = torch.zeros(self.num_envs, device=self.device)
 
+        if self.record_episode_statistics:
+            self.episode_statistics.new_episode()
+
         result = self.get_from_scenario(
             get_observations=return_observations,
             get_infos=return_info,
@@ -102,7 +114,7 @@ class Environment(TorchVectorizedObject):
 
     def reset_at(
         self,
-        index: int,
+        index: Union[int, List[int]],
         return_observations: bool = True,
         return_info: bool = False,
         return_dones: bool = False,
@@ -111,9 +123,17 @@ class Environment(TorchVectorizedObject):
         Resets the environment at index
         Returns observations for all agents in that environment
         """
-        self._check_batch_index(index)
-        self.scenario.env_reset_world_at(index)
-        self.steps[index] = 0
+        if isinstance(index, int):
+            index = [index]
+
+        for i in index:
+            self._check_batch_index(i)
+            self.scenario.env_reset_world_at(i)
+            self.steps[i] = 0
+
+            if self.record_episode_statistics:
+                self.episode_statistics.new_episode(index=i)
+
 
         result = self.get_from_scenario(
             get_observations=return_observations,
@@ -192,8 +212,8 @@ class Environment(TorchVectorizedObject):
                  of shape '(self.num_envs, obs_size_of_agent)'
             rewards: List on len 'self.n_agents' of which each element is a torch.Tensor of shape '(self.num_envs)'
             dones: Tensor of len 'self.num_envs' of which each element is a bool
-            infos : List on len 'self.n_agents' of which each element is a dictionary for which each key is a metric
-                    and the value is a tensor of shape '(self.num_envs, metric_size_per_agent)'
+            infos : List on len 'self.num_envs' of which each element is a dictionary for which each key is a metric
+                    and the value is a tensor
         """
         if isinstance(actions, Dict):
             actions_dict = actions
@@ -241,6 +261,32 @@ class Environment(TorchVectorizedObject):
         obs, rewards, dones, infos = self.get_from_scenario(
             get_observations=True, get_infos=True, get_rewards=True, get_dones=True
         )
+
+        # infos as list of len 'self.n_agents' of dicts mapping metric names to tensors of shape (self.num_envs, metric_size)
+        # --> change to list of len 'self.num_envs' of dicts mapping metric names to tensors of shape (metric_size)
+        new_infos = [{} for _ in range(self.num_envs)]
+        for i in range(self.n_agents):
+            for key, value in infos[i].items():
+                for n in range(self.num_envs):
+                    new_infos[n][f"agent{i}/{key}"] = value[n]
+        infos = new_infos
+
+        if self.record_episode_statistics:
+            self.episode_statistics.process_step(rewards, dones, infos)
+
+        if self.reset_on_done and dones.any():
+            last_obs = torch.stack(obs)
+            if dones.all():
+                obs = self.reset()
+                term_obs = last_obs
+            else:
+                to_reset_indices = [i for i, done in enumerate(dones) if done]
+                term_obs = torch.empty_like(last_obs)
+                term_obs[:, to_reset_indices] = last_obs[:, to_reset_indices]
+                obs = self.reset_at(index=to_reset_indices)
+            for n, d in enumerate(dones):
+                if d:
+                    infos[n]["terminal_observation"] = term_obs[:, n]
 
         # print("\nStep results in unwrapped environment")
         # print(

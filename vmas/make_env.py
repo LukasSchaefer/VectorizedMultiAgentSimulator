@@ -24,6 +24,8 @@ def make_env(
     dict_spaces: bool = False,
     multidiscrete_actions: bool = False,
     clamp_actions: bool = False,
+    reset_on_done: bool = True,
+    record_episode_statistics: bool = False,
     **kwargs,
 ):
     """
@@ -43,6 +45,8 @@ def make_env(
             action spaces of an agent.
         clamp_actions: Weather to clamp input actions to the range instead of throwing
             an error when continuous_actions is True and actions are out of bounds
+        reset_on_done: Weather to reset the environment when done is True
+        record_episode_statistics: Weather to record episode statistics in the info dict
         **kwargs ():
 
     Returns:
@@ -64,6 +68,8 @@ def make_env(
         dict_spaces=dict_spaces,
         multidiscrete_actions=multidiscrete_actions,
         clamp_actions=clamp_actions,
+        reset_on_done=reset_on_done,
+        record_episode_statistics=record_episode_statistics,
         **kwargs,
     )
 
