@@ -2342,11 +2342,11 @@ class World(TorchVectorizedObject):
             / dist.unsqueeze(-1)
             * penetration.unsqueeze(-1)
         )
-        force = torch.where((dist < min_dist).unsqueeze(-1), 0.0, force)
+        zeros = torch.zeros_like(force, dtype=torch.float32, device=self.device)
         if not attractive:
-            force = torch.where((dist > dist_min).unsqueeze(-1), 0.0, force)
+            force = torch.where((dist > dist_min).unsqueeze(-1), zeros, force)
         else:
-            force = torch.where((dist < dist_min).unsqueeze(-1), 0.0, force)
+            force = torch.where((dist < dist_min).unsqueeze(-1), zeros, force)
         return force, -force
 
     # integrate physical state
