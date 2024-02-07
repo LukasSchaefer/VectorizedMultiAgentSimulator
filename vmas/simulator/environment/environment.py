@@ -83,6 +83,9 @@ class Environment(TorchVectorizedObject):
         self.headless = None
         self.visible_display = None
         self.text_lines = None
+    
+    def set_arguments(self, **kwargs):
+        self.scenario.set_arguments(**kwargs)
 
     def reset(
         self,

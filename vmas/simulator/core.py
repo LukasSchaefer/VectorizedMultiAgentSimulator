@@ -5,9 +5,8 @@
 from __future__ import annotations
 
 import math
-import typing
 from abc import ABC, abstractmethod
-from typing import Callable, List, Tuple, Union, Sequence
+from typing import Callable, List, Optional, Tuple, TYPE_CHECKING, Union, Sequence
 
 import torch
 from torch import Tensor
@@ -39,7 +38,7 @@ from vmas.simulator.utils import (
     TorchUtils,
 )
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from vmas.simulator.rendering import Geom
 
 
@@ -82,7 +81,7 @@ class TorchVectorizedObject(object):
 
 class Shape(ABC):
     @abstractmethod
-    def moment_of_inertia(self, mass: float):
+    def moment_of_inertia(self, mass: Union[float, Tensor]):
         raise NotImplementedError
 
     @abstractmethod
@@ -118,7 +117,7 @@ class Box(Shape):
     def get_delta_from_anchor(self, anchor: Tuple[float, float]) -> Tuple[float, float]:
         return anchor[X] * self.length / 2, anchor[Y] * self.width / 2
 
-    def moment_of_inertia(self, mass: float):
+    def moment_of_inertia(self, mass: Union[float, Tensor]):
         return (1 / 12) * mass * (self.length**2 + self.width**2)
 
     def circumscribed_radius(self):
@@ -145,6 +144,10 @@ class Sphere(Shape):
     @property
     def radius(self):
         return self._radius
+    
+    @radius.setter
+    def radius(self, radius: float):
+        self._radius = radius
 
     def get_delta_from_anchor(self, anchor: Tuple[float, float]) -> Tuple[float, float]:
         delta = torch.tensor([anchor[X] * self.radius, anchor[Y] * self.radius]).to(
@@ -155,7 +158,7 @@ class Sphere(Shape):
             delta /= delta_norm * self.radius
         return tuple(delta.tolist())
 
-    def moment_of_inertia(self, mass: float):
+    def moment_of_inertia(self, mass: Union[float, Tensor]):
         return (1 / 2) * mass * self.radius**2
 
     def circumscribed_radius(self):
@@ -177,12 +180,16 @@ class Line(Shape):
     @property
     def length(self):
         return self._length
+    
+    @length.setter
+    def length(self, length: float):
+        self._length = length
 
     @property
     def width(self):
         return self._width
 
-    def moment_of_inertia(self, mass: float):
+    def moment_of_inertia(self, mass: Union[float, Tensor]):
         return (1 / 12) * mass * (self.length**2)
 
     def circumscribed_radius(self):
@@ -281,7 +288,7 @@ class EntityState(TorchVectorizedObject):
 
         self._rot = rot.to(self._device)
 
-    def _reset(self, env_index: typing.Optional[int]):
+    def _reset(self, env_index: Optional[int]):
         for attr in [self.pos, self.rot, self.vel, self.ang_vel]:
             if attr is not None:
                 if env_index is None:
@@ -362,7 +369,7 @@ class AgentState(EntityState):
         self._torque = value.to(self._device)
 
     @override(EntityState)
-    def _reset(self, env_index: typing.Optional[int]):
+    def _reset(self, env_index: Optional[int]):
         for attr in [self.c, self.force, self.torque]:
             if attr is not None:
                 if env_index is None:
@@ -490,7 +497,7 @@ class Action(TorchVectorizedObject):
             device=self.device,
         )
 
-    def _reset(self, env_index: typing.Optional[int]):
+    def _reset(self, env_index: Optional[int]):
         for attr in [self.u, self.c]:
             if attr is not None:
                 if env_index is None:
@@ -508,16 +515,16 @@ class Entity(TorchVectorizedObject, Observable, ABC):
         rotatable: bool = False,
         collide: bool = True,
         density: float = 25.0,  # Unused for now
-        mass: float = 1.0,
+        mass: Union[float, Tensor] = 1.0,
         shape: Shape = Sphere(),
-        v_range: float = None,
-        max_speed: float = None,
+        v_range: Union[float, Tensor] = None,
+        max_speed: Union[float, Tensor] = None,
         color=Color.GRAY,
         is_joint: bool = False,
-        drag: float = None,
-        linear_friction: float = None,
-        angular_friction: float = None,
-        gravity: typing.Union[float, Tensor] = None,
+        drag: Union[float, Tensor] = None,
+        linear_friction: Union[float, Tensor] = None,
+        angular_friction: Union[float, Tensor] = None,
+        gravity: Union[float, Tensor] = None,
         collision_filter: Callable[[Entity], bool] = lambda _: True,
     ):
         TorchVectorizedObject.__init__(self)
@@ -532,11 +539,6 @@ class Entity(TorchVectorizedObject, Observable, ABC):
         self._collide = collide
         # material density (affects mass)
         self._density = density
-        # mass
-        self._mass = mass
-        # max speed
-        self._max_speed = max_speed
-        self._v_range = v_range
         # color
         self._color = color
         # shape
@@ -547,20 +549,25 @@ class Entity(TorchVectorizedObject, Observable, ABC):
         self._collision_filter = collision_filter
         # state
         self._state = EntityState()
-        # drag
-        self._drag = drag
-        # friction
-        self._linear_friction = linear_friction
-        self._angular_friction = angular_friction
-        # gravity
-        if isinstance(gravity, Tensor):
-            self._gravity = gravity
-        else:
-            self._gravity = (
-                torch.tensor(gravity, device=self.device, dtype=torch.float32)
-                if gravity is not None
-                else gravity
-            )
+        # set mass, max speed v range, gravity, drag, friction attributes as tensors
+        for attr, value in [
+            ("mass", mass),
+            ("v_range", v_range),
+            ("max_speed", max_speed),
+            ("gravity", gravity),
+            ("drag", drag),
+            ("linear_friction", linear_friction),
+            ("angular_friction", angular_friction),
+        ]:
+            if isinstance(value, Tensor):
+                tensor_value = value
+            else:
+                tensor_value = (
+                    torch.tensor(value, device=self.device, dtype=torch.float32)
+                    if value is not None
+                    else value
+                )
+            setattr(self, f"_{attr}", tensor_value)
         # entity goal
         self._goal = None
         # Render the entity
@@ -570,6 +577,19 @@ class Entity(TorchVectorizedObject, Observable, ABC):
     def batch_dim(self, batch_dim: int):
         TorchVectorizedObject.batch_dim.fset(self, batch_dim)
         self._state.batch_dim = batch_dim
+        # expand mass, max speed, v range, gravity, drag, friction attributes to batch dim
+        for attr in [
+            "_mass",
+            "_v_range",
+            "_max_speed",
+            "_gravity",
+            "_drag",
+            "_linear_friction",
+            "_angular_friction",
+        ]:
+            value = getattr(self, attr)
+            if value is not None and value.dim() < 2:
+                setattr(self, attr, value.reshape(-1, 1).expand(batch_dim, -1))
 
     @property
     def is_rendering(self):
@@ -594,8 +614,18 @@ class Entity(TorchVectorizedObject, Observable, ABC):
         return self._mass
 
     @mass.setter
-    def mass(self, mass: float):
-        self._mass = mass
+    def mass(self, mass: Union[float, Tensor]):
+        if isinstance(mass, Tensor):
+            assert mass.shape[0] == self.batch_dim, (
+                f"Mass must match batch dim, got {mass.shape[0]}, expected {self.batch_dim}"
+            )
+        else:
+            mass = (
+                torch.tensor(mass, device=self.device, dtype=torch.float32).expand(self.batch_dim)
+                if mass is not None
+                else mass
+            )
+        self._mass = mass.reshape(self.batch_dim, 1)
 
     @property
     def moment_of_inertia(self):
@@ -621,9 +651,37 @@ class Entity(TorchVectorizedObject, Observable, ABC):
     def max_speed(self):
         return self._max_speed
 
+    @max_speed.setter
+    def max_speed(self, value):
+        if isinstance(value, Tensor):
+            assert value.shape[0] == self.batch_dim, (
+                f"Friction value must match batch dim, got {value.shape[0]}, expected {self.batch_dim}"
+            )
+        else:
+            value = (
+                torch.tensor(value, device=self.device, dtype=torch.float32).expand(self.batch_dim)
+                if value is not None
+                else value
+            )
+        self._max_speed = value.reshape(self.batch_dim, 1)
+
     @property
     def v_range(self):
         return self._v_range
+
+    @v_range.setter
+    def v_range(self, value):
+        if isinstance(value, Tensor):
+            assert value.shape[0] == self.batch_dim, (
+                f"Friction value must match batch dim, got {value.shape[0]}, expected {self.batch_dim}"
+            )
+        else:
+            value = (
+                torch.tensor(value, device=self.device, dtype=torch.float32).expand(self.batch_dim)
+                if value is not None
+                else value
+            )
+        self._v_range = value.reshape(self.batch_dim, 1)
 
     @property
     def name(self):
@@ -651,13 +709,55 @@ class Entity(TorchVectorizedObject, Observable, ABC):
     def drag(self):
         return self._drag
 
+    @drag.setter
+    def drag(self, value):
+        if isinstance(value, Tensor):
+            assert value.shape[0] == self.batch_dim, (
+                f"Friction value must match batch dim, got {value.shape[0]}, expected {self.batch_dim}"
+            )
+        else:
+            value = (
+                torch.tensor(value, device=self.device, dtype=torch.float32).expand(self.batch_dim)
+                if value is not None
+                else value
+            )
+        self._drag = value.reshape(self.batch_dim, 1)
+
     @property
     def linear_friction(self):
         return self._linear_friction
 
     @linear_friction.setter
     def linear_friction(self, value):
-        self._linear_friction = value
+        if isinstance(value, Tensor):
+            assert value.shape[0] == self.batch_dim, (
+                f"Friction value must match batch dim, got {value.shape[0]}, expected {self.batch_dim}"
+            )
+        else:
+            value = (
+                torch.tensor(value, device=self.device, dtype=torch.float32).expand(self.batch_dim)
+                if value is not None
+                else value
+            )
+        self._linear_friction = value.reshape(self.batch_dim, 1)
+
+    @property
+    def angular_friction(self):
+        return self._angular_friction
+
+    @angular_friction.setter
+    def angular_friction(self, value):
+        if isinstance(value, Tensor):
+            assert value.shape[0] == self.batch_dim, (
+                f"Friction value must match batch dim, got {value.shape[0]}, expected {self.batch_dim}"
+            )
+        else:
+            value = (
+                torch.tensor(value, device=self.device, dtype=torch.float32).expand(self.batch_dim)
+                if value is not None
+                else value
+            )
+        self._angular_friction = value.reshape(self.batch_dim, 1)
 
     @property
     def gravity(self):
@@ -665,11 +765,17 @@ class Entity(TorchVectorizedObject, Observable, ABC):
 
     @gravity.setter
     def gravity(self, value):
+        if isinstance(value, Tensor):
+            assert value.shape[0] == self.batch_dim, (
+                f"Friction value must match batch dim, got {value.shape[0]}, expected {self.batch_dim}"
+            )
+        else:
+            value = (
+                torch.tensor(value, device=self.device, dtype=torch.float32).expand(self.batch_dim)
+                if value is not None
+                else value
+            )
         self._gravity = value
-
-    @property
-    def angular_friction(self):
-        return self._angular_friction
 
     @goal.setter
     def goal(self, goal: Entity):
@@ -754,15 +860,15 @@ class Landmark(Entity):
         rotatable: bool = False,
         collide: bool = True,
         density: float = 25.0,  # Unused for now
-        mass: float = 1.0,
-        v_range: float = None,
-        max_speed: float = None,
+        mass: Union[float, Tensor] = 1.0,
+        v_range: Union[float, Tensor] = None,
+        max_speed: Union[float, Tensor] = None,
         color=Color.GRAY,
         is_joint: bool = False,
-        drag: float = None,
-        linear_friction: float = None,
-        angular_friction: float = None,
-        gravity: float = None,
+        drag: Union[float, Tensor] = None,
+        linear_friction: Union[float, Tensor] = None,
+        angular_friction: Union[float, Tensor] = None,
+        gravity: Union[float, Tensor] = None,
         collision_filter: Callable[[Entity], bool] = lambda _: True,
     ):
         super().__init__(
@@ -795,13 +901,13 @@ class Agent(Entity):
         rotatable: bool = True,
         collide: bool = True,
         density: float = 25.0,  # Unused for now
-        mass: float = 1.0,
+        mass: Union[float, Tensor] = 1.0,
         f_range: float = None,
         max_f: float = None,
         t_range: float = None,
         max_t: float = None,
-        v_range: float = None,
-        max_speed: float = None,
+        v_range: Union[float, Tensor] = None,
+        max_speed: Union[float, Tensor] = None,
         color=Color.BLUE,
         alpha: float = 0.5,
         obs_range: float = None,
@@ -814,10 +920,10 @@ class Agent(Entity):
         c_noise: float = 0.0,
         silent: bool = True,
         adversary: bool = False,
-        drag: float = None,
-        linear_friction: float = None,
-        angular_friction: float = None,
-        gravity: float = None,
+        drag: Union[float, Tensor] = None,
+        linear_friction: Union[float, Tensor] = None,
+        angular_friction: Union[float, Tensor] = None,
+        gravity: Union[float, Tensor] = None,
         collision_filter: Callable[[Entity], bool] = lambda _: True,
         render_action: bool = False,
         dynamics: Dynamics = None,  # Defaults to holonomic
@@ -1027,16 +1133,16 @@ class World(TorchVectorizedObject):
         device: torch.device,
         dt: float = 0.1,
         substeps: int = 1,  # if you use joints, higher this value to gain simulation stability
-        drag: float = DRAG,
-        linear_friction: float = LINEAR_FRICTION,
-        angular_friction: float = ANGULAR_FRICTION,
+        drag: Union[float, Tensor] = DRAG,
+        linear_friction: Union[float, Tensor] = LINEAR_FRICTION,
+        angular_friction: Union[float, Tensor] = ANGULAR_FRICTION,
         x_semidim: float = None,
         y_semidim: float = None,
         dim_c: int = 0,
         collision_force: float = COLLISION_FORCE,
         joint_force: float = JOINT_FORCE,
         contact_margin: float = 1e-3,
-        gravity: Tuple[float, float] = (0.0, 0.0),
+        gravity: Union[Tuple[float, float], Tensor] = (0.0, 0.0),
     ):
         assert batch_dim > 0, f"Batch dim must be greater than 0, got {batch_dim}"
 
@@ -1055,13 +1161,25 @@ class World(TorchVectorizedObject):
         self._dt = dt
         self._substeps = substeps
         self._sub_dt = self._dt / self._substeps
-        # drag coefficient
-        self._drag = drag
         # gravity
-        self._gravity = torch.tensor(gravity, device=self.device, dtype=torch.float32)
-        # friction coefficients
-        self._linear_friction = linear_friction
-        self._angular_friction = angular_friction
+        if isinstance(gravity, Tensor):
+            assert gravity.dim() == 2 and gravity.shape == (batch_dim, 2), f"Expected gravity to be a tensor of shape (batch_dim, 2), got {gravity.shape}"
+            self._gravity = gravity
+        else:
+            assert isinstance(gravity, tuple) and len(gravity) == 2, f"Expected gravity to be a tuple of 2 floats, got {gravity}"
+            self._gravity = torch.tensor(gravity, device=self.device, dtype=torch.float32).unsqueeze(0).repeat(batch_dim, 1)
+        # set drag and friction coefficients as vectorised values
+        for attr, value in [
+            ("drag", drag),
+            ("linear_friction", linear_friction),
+            ("angular_friction", angular_friction),
+        ]:
+            if isinstance(value, Tensor):
+                assert value.dim() == 1 and value.shape[0] == batch_dim, f"Expected {attr} to be a tensor of shape (batch_dim), got {value.shape}"
+                tensor_value = value
+            else:
+                tensor_value = torch.tensor(value, device=self.device, dtype=torch.float32).repeat(batch_dim)
+            setattr(self, f"_{attr}", tensor_value.unsqueeze(-1))
         # constraint response parameters
         self._collision_force = collision_force
         self._joint_force = joint_force
@@ -1617,7 +1735,7 @@ class World(TorchVectorizedObject):
                 self.force[:, index],
                 entity.mass,
             )
-        elif self._linear_friction > 0:
+        elif (self._linear_friction > 0).any():
             self.force[:, index] += get_friction_force(
                 entity.state.vel,
                 self._linear_friction,
@@ -1631,7 +1749,7 @@ class World(TorchVectorizedObject):
                 self.torque[:, index],
                 entity.moment_of_inertia,
             )
-        elif self._angular_friction > 0:
+        elif (self._angular_friction > 0).any():
             self.torque[:, index] += get_friction_force(
                 entity.state.ang_vel,
                 self._angular_friction,
@@ -2355,15 +2473,15 @@ class World(TorchVectorizedObject):
         if entity.movable:
             # Compute translation
             if substep == 0:
-                if entity.drag is not None:
-                    entity.state.vel = entity.state.vel * (1 - entity.drag)
-                else:
-                    entity.state.vel = entity.state.vel * (1 - self._drag)
+                drag = entity.drag if entity.drag is not None else self._drag
+                if not isinstance(drag, Tensor):
+                    drag = torch.full_like(entity.state.vel, drag, device=self.device)
+                entity.state.vel = entity.state.vel * (1 - drag)
             accel = self.force[:, index] / entity.mass
             entity.state.vel += accel * self._sub_dt
             if entity.max_speed is not None:
                 entity.state.vel = TorchUtils.clamp_with_norm(
-                    entity.state.vel, entity.max_speed
+                    entity.state.vel, entity.max_speed.expand_as(entity.state.vel)
                 )
             if entity.v_range is not None:
                 entity.state.vel = entity.state.vel.clamp(
@@ -2382,10 +2500,10 @@ class World(TorchVectorizedObject):
         if entity.rotatable:
             # Compute rotation
             if substep == 0:
-                if entity.drag is not None:
-                    entity.state.ang_vel = entity.state.ang_vel * (1 - entity.drag)
-                else:
-                    entity.state.ang_vel = entity.state.ang_vel * (1 - self._drag)
+                drag = entity.drag if entity.drag is not None else self._drag
+                if not isinstance(drag, Tensor):
+                    drag = torch.full_like(entity.state.vel, drag, device=self.device)
+                entity.state.ang_vel = entity.state.ang_vel * (1 - drag)
             entity.state.ang_vel += (
                 self.torque[:, index] / entity.moment_of_inertia
             ) * self._sub_dt

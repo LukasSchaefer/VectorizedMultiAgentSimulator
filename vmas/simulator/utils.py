@@ -154,9 +154,11 @@ def extract_nested_with_index(data: Union[Tensor, Dict[str, Tensor]], index: int
 
 class TorchUtils:
     @staticmethod
-    def clamp_with_norm(tensor: Tensor, max_norm: float):
-        norm = torch.linalg.vector_norm(tensor, dim=-1)
-        new_tensor = (tensor / norm.unsqueeze(-1)) * max_norm
+    def clamp_with_norm(tensor: Tensor, max_norm: Union[float, Tensor]):
+        norm = torch.linalg.vector_norm(tensor, dim=-1).unsqueeze(-1)
+        new_tensor = (tensor / norm) * max_norm
+        if not isinstance(max_norm, Tensor):
+            norm = norm.squeeze(-1)
         tensor[norm > max_norm] = new_tensor[norm > max_norm]
         return tensor
 
