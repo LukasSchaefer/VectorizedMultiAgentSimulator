@@ -646,6 +646,10 @@ class Entity(TorchVectorizedObject, Observable, ABC):
     @property
     def shape(self):
         return self._shape
+    
+    @shape.setter
+    def shape(self, shape: Shape):
+        self._shape = shape
 
     @property
     def max_speed(self):
@@ -1032,6 +1036,10 @@ class Agent(Entity):
     @property
     def obs_noise(self):
         return self._obs_noise if self._obs_noise is not None else 0
+    
+    @obs_noise.setter
+    def obs_noise(self, obs_noise: float):
+        self._obs_noise = obs_noise
 
     @property
     def action(self) -> Action:

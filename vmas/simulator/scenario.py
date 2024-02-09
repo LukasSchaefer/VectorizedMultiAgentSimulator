@@ -34,7 +34,7 @@ class BaseScenario(ABC):
         # The distance between lines in the background grid
         self.grid_spacing = 0.1
 
-    def set_arguments(self, **kwargs):
+    def update_arguments(self, **kwargs):
         for key, value in kwargs.items():
             setattr(self, key, value)
 
