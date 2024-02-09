@@ -12,21 +12,28 @@ from vmas.simulator.utils import Color, Y
 
 
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+    def init_params(self, **kwargs):
         self.n_agents = kwargs.get("n_agents", 3)
+        assert self.n_agents > 1
+
         self.package_mass = kwargs.get("package_mass", 5)
         self.random_package_pos_on_line = kwargs.get("random_package_pos_on_line", True)
 
-        assert self.n_agents > 1
+        self.line_length = kwargs.get("line_length", 0.8)
+        self.line_mass = kwargs.get("line_mass", 5)
 
-        self.line_length = 0.8
-        self.agent_radius = 0.03
+        self.agent_radius = kwargs.get("agent_radius", 0.03)
 
-        self.shaping_factor = 100
-        self.fall_reward = -10
+        self.world_gravity = kwargs.get("world_gravity", (0.0, -0.05))
+
+        self.shaping_factor = kwargs.get("shaping_factor", 100)
+        self.fall_reward = kwargs.get("fall_reward", -10)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
 
         # Make world
-        world = World(batch_dim, device, gravity=(0.0, -0.05), y_semidim=1)
+        world = World(batch_dim, device, gravity=self.world_gravity, y_semidim=1)
         # Add agents
         for i in range(self.n_agents):
             agent = Agent(
@@ -59,7 +66,7 @@ class Scenario(BaseScenario):
             collide=True,
             movable=True,
             rotatable=True,
-            mass=5,
+            mass=self.line_mass,
             color=Color.BLACK,
         )
         world.add_landmark(self.line)
@@ -76,7 +83,28 @@ class Scenario(BaseScenario):
         self.ground_rew = self.pos_rew.clone()
 
         return world
-
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+        
+        # arguments that require changes to the world
+        if "world_gravity" in kwargs:
+            self.world._gravity = self.world_gravity
+        
+        # arguments that require changes of agents
+        if "agent_radius" in kwargs:
+            for agent in self.world.agents:
+                agent._shape.radius = self.agent_radius
+        
+        # arguments that require changes the package
+        if "package_mass" in kwargs:
+            self.package.mass = self.package_mass
+        
+        # arguments that require changes of the line
+        if any(key in kwargs for key in ["line_length", "line_mass"]):
+            self.line._shape.length = self.line_length
+            self.line.mass = self.line_mass
+        
     def reset_world_at(self, env_index: int = None):
         goal_pos = torch.cat(
             [

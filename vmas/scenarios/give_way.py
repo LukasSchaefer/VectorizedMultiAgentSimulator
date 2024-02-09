@@ -11,8 +11,10 @@ from vmas.simulator.utils import Color, TorchUtils
 from vmas.simulator.controllers.velocity_controller import VelocityController
 
 
+IMMUTABLES = ["v_range", "a_range"]
+
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+    def init_params(self, **kwargs):
         self.v_range = kwargs.get("v_range", 0.5)
         self.a_range = kwargs.get("a_range", 1)
         self.obs_noise = kwargs.get("obs_noise", 0)
@@ -21,6 +23,14 @@ class Scenario(BaseScenario):
         self.mirror_passage = kwargs.get("mirror_passage", False)
         self.done_on_completion = kwargs.get("done_on_completion", False)
         self.observe_rel_pos = kwargs.get("observe_rel_pos", False)
+
+        # World params
+        self.world_drag = kwargs.get("world_drag", 0)
+    
+        # Agent params
+        self.agent_radius = kwargs.get("agent_radius", 0.16)
+        self.agent_box_length = kwargs.get("agent_box_length", 0.32)
+        self.agent_box_width = kwargs.get("agent_box_width", 0.24)
 
         # Reward params
         self.pos_shaping_factor = kwargs.get("pos_shaping_factor", 1.0)
@@ -36,8 +46,10 @@ class Scenario(BaseScenario):
         self.min_input_norm = kwargs.get("min_input_norm", 0.08)
         self.dt_delay = kwargs.get("dt_delay", 0)
 
-        self.viewer_size = (1600, 700)
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
 
+        self.viewer_size = (1600, 700)
         controller_params = [2, 6, 0.002]
 
         self.f_range = self.a_range + self.linear_friction
@@ -47,16 +59,12 @@ class Scenario(BaseScenario):
         world = World(
             batch_dim,
             device,
-            drag=0,
+            drag=self.world_drag,
             dt=0.05,
             linear_friction=self.linear_friction,
             substeps=16 if self.box_agents else 5,
             collision_force=10000 if self.box_agents else 500,
         )
-
-        self.agent_radius = 0.16
-        self.agent_box_length = 0.32
-        self.agent_box_width = 0.24
 
         self.spawn_pos_noise = 0.02
         self.min_collision_distance = 0.005
@@ -131,7 +139,31 @@ class Scenario(BaseScenario):
         self.final_rew = self.pos_rew.clone()
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
 
+        if any(key in IMMUTABLES for key in kwargs):
+            raise ValueError(f"Cannot change {IMMUTABLES} after initialization")
+        
+        if any(key in kwargs for key in ["agent_radius", "agent_box_length", "agent_box_width", "box_agents"]):
+            for agent in self.world.agents:
+                agent.shape = Box(
+                    length=self.agent_box_length,
+                    width=self.agent_box_width,
+                ) if self.box_agents else Sphere(radius=self.agent_radius)
+                if "agent_radius" in kwargs:
+                    agent.goal.shape = Sphere(radius=self.agent_radius / 2)
+
+        if "linear_friction" in kwargs:
+            self.world.linear_friction = self.linear_friction
+            for agent in self.world.agents:
+                agent.linear_friction = self.linear_friction
+
+        # World params
+        if "world_drag" in kwargs:
+            self.world.drag = self.world_drag
+    
     def reset_world_at(self, env_index: int = None):
         self.world.agents[0].set_pos(
             torch.tensor(

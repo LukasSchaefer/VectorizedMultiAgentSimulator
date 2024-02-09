@@ -14,20 +14,31 @@ from vmas.simulator.utils import X, Color, JOINT_FORCE
 
 
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+
+    def init_params(self, **kwargs):
         self.pos_shaping_factor = kwargs.get("pos_shaping_factor", 0)
         self.speed_shaping_factor = kwargs.get("speed_shaping_factor", 1)
         self.dist_shaping_factor = kwargs.get("dist_shaping_factor", 0)
         self.joints = kwargs.get("joints", True)
 
-        self.n_agents = 2
+        self.world_drag = kwargs.get("world_drag", 0.0)
 
-        self.desired_speed = 1
-        self.desired_radius = 0.5
+        self.n_agents = kwargs.get("n_agents", 2)
 
-        self.agent_spacing = 0.4
-        self.agent_radius = 0.03
-        self.ball_radius = 2 * self.agent_radius
+        self.desired_speed = kwargs.get("desired_speed", 1)
+        self.desired_radius = kwargs.get("desired_radius", 0.5)
+
+        self.agent_spacing = kwargs.get("agent_spacing", 0.4)
+        self.agent_radius = kwargs.get("agent_radius", 0.03)
+        self.agent_drag = kwargs.get("agent_drag", 0.25)
+
+        self.ball_radius = kwargs.get("ball_radius", 2 * self.agent_radius)
+        self.ball_friction = kwargs.get("ball_friction", 0.04)
+
+        self.joint_mass = kwargs.get("joint_mass", 1)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
 
         # Make world
         world = World(
@@ -36,12 +47,12 @@ class Scenario(BaseScenario):
             substeps=15 if self.joints else 5,
             joint_force=900 if self.joints else JOINT_FORCE,
             collision_force=1500 if self.joints else 400,
-            drag=0,
+            drag=self.world_drag,
         )
         # Add agents
-        agent = Agent(name="agent_0", shape=Sphere(self.agent_radius), drag=0.25)
+        agent = Agent(name="agent_0", shape=Sphere(self.agent_radius), drag=self.agent_drag)
         world.add_agent(agent)
-        agent = Agent(name="agent_1", shape=Sphere(self.agent_radius), drag=0.25)
+        agent = Agent(name="agent_1", shape=Sphere(self.agent_radius), drag=self.agent_drag)
         world.add_agent(agent)
 
         self.ball = Landmark(
@@ -49,7 +60,7 @@ class Scenario(BaseScenario):
             shape=Sphere(radius=self.ball_radius),
             collide=True,
             movable=True,
-            linear_friction=0.04,
+            linear_friction=self.ball_friction,
         )
         world.add_landmark(self.ball)
 
@@ -67,7 +78,7 @@ class Scenario(BaseScenario):
                         rotate_b=True,
                         collidable=False,
                         width=0,
-                        mass=1,
+                        mass=self.joint_mass,
                     )
                 )
                 world.add_joint(self.joints[i])
@@ -77,6 +88,30 @@ class Scenario(BaseScenario):
         self.dist_rew = self.pos_rew.clone()
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        # arguments that require changes of agents
+        if any(key in kwargs for key in ["agent_radius", "agent_drag"]):
+            for agent in self.world.agents:
+                agent.drag = self.agent_drag
+                agent._shape.radius = self.agent_radius
+
+        # arguments that require changes the ball
+        if any(key in kwargs for key in ["ball_radius", "ball_friction"]):
+            self.ball._shape.radius = self.ball_radius
+            self.ball.linear_friction = self.ball_friction
+        
+        # arguments that require changes of joints
+        if self.joints and "joint_mass" in kwargs:
+            for joint in self.joints:
+                if joint.landmark is not None:
+                    joint.landmark.mass = self.joint_mass
+        
+        # arguments that require changes of the world
+        if "world_drag" in kwargs:
+            self.world._drag = self.world_drag
 
     def reset_world_at(self, env_index: int = None):
         ball_pos = torch.zeros(

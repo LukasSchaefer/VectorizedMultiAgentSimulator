@@ -47,8 +47,20 @@ def get_line_angle_dist_0_180(angle, goal):
     ).squeeze(-1)
 
 
+IMMUTABLES = [
+    "n_passages",
+    "joint_length",
+    "asym_package",
+    "mass_position",
+    "middle_angle_180",
+    "use_vel_controller",
+    "passage_length",
+]
+
+
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+    def init_params(self, **kwargs):
+        self.n_passages = kwargs.get("n_passages", 3)
         self.fixed_passage = kwargs.get("fixed_passage", False)
         self.joint_length = kwargs.get("joint_length", 0.52)
         self.random_start_angle = kwargs.get("random_start_angle", False)
@@ -64,11 +76,26 @@ class Scenario(BaseScenario):
         self.collision_reward = kwargs.get("collision_reward", 0)
         self.energy_reward_coeff = kwargs.get("energy_reward_coeff", 0)
         self.obs_noise = kwargs.get("obs_noise", 0.0)
-        self.n_passages = kwargs.get("n_passages", 3)
         self.middle_angle_180 = kwargs.get("middle_angle_180", False)
         self.use_vel_controller = kwargs.get("use_vel_controller", False)
 
+        # World params
+        self.world_drag = kwargs.get("world_drag", 0.25 if not self.asym_package else 0.15)
+
+        # Agent params
+        self.agent_radius = kwargs.get("agent_radius", 0.03333)
+        self.agent_radius_2 = kwargs.get("agent_radius_2", 3 * self.agent_radius)
+        self.agent_mass = kwargs.get("agent_mass", 1)
+
+        # Other params
+        self.mass_radius = kwargs.get("mass_radius", self.agent_radius * (2 / 3))
+        self.passage_length = kwargs.get("passage_length", 0.1476)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+
         assert self.n_passages == 3 or self.n_passages == 4
+        if not self.observe_joint_angle:
+            assert self.joint_angle_obs_noise == 0
 
         self.plot_grid = False
 
@@ -81,21 +108,14 @@ class Scenario(BaseScenario):
             substeps=5 if not self.asym_package else 10,
             joint_force=700 if self.asym_package else 400,
             collision_force=2500 if self.asym_package else 1500,
-            drag=0.25 if not self.asym_package else 0.15,
+            drag=self.world_drag,
         )
-
-        if not self.observe_joint_angle:
-            assert self.joint_angle_obs_noise == 0
 
         self.n_agents = 2
 
         self.middle_angle = torch.zeros((world.batch_dim, 1), device=world.device)
 
-        self.agent_radius = 0.03333
-        self.agent_radius_2 = 3 * self.agent_radius
-        self.mass_radius = self.agent_radius * (2 / 3)
         self.passage_width = 0.2
-        self.passage_length = 0.1476
         self.scenario_length = 2 + 2 * self.agent_radius
         self.n_boxes = int(self.scenario_length // self.passage_length)
         self.min_collision_distance = 0.005
@@ -119,7 +139,7 @@ class Scenario(BaseScenario):
             name="agent_1",
             shape=Sphere(self.agent_radius_2),
             u_range=1,
-            mass=1 if self.asym_package else self.mass_ratio,
+            mass=self.agent_mass if self.asym_package else self.mass_ratio,
             max_speed=self.max_speed_1,
             obs_noise=self.obs_noise,
             render_action=True,
@@ -140,7 +160,7 @@ class Scenario(BaseScenario):
             rotate_b=True,
             collidable=False,
             width=0,
-            mass=1,
+            mass=self.agent_mass,
         )
         world.add_joint(self.joint)
 
@@ -200,6 +220,49 @@ class Scenario(BaseScenario):
         self.all_passed = torch.full((batch_dim,), False, device=device)
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if any(k in IMMUTABLES for k in kwargs):
+            raise ValueError(f"Tried to update immutable value from {IMMUTABLES}.")
+        
+        if "mass_ratio" in kwargs:
+            if self.asym_package:
+                self.mass.mass = self.mass_ratio
+            else:
+                self.world.agents[1].mass = self.mass_ratio
+        
+        if "max_speed_1" in kwargs:
+            self.world.agents[1].max_speed = self.max_speed_1
+        
+        if "obs_noise" in kwargs:
+            for agent in self.world.agents:
+                agent.obs_noise = self.obs_noise
+
+        if "world_drag" in kwargs:
+            self.world.drag = self.world_drag
+        
+        if "agent_radius" in kwargs:
+            self.scenario_length = 2 + 2 * self.agent_radius
+            self.n_boxes = int(self.scenario_length // self.passage_length)
+
+            self.world.agents[0].shape._radius = self.agent_radius
+            for wall in self.walls:
+                wall.shape._length = 2 + self.agent_radius * 2
+        
+        if "agent_radius_2" in kwargs:
+            self.world.agents[1].shape._radius = self.agent_radius_2
+        
+        if "agent_mass" in kwargs:
+            if self.asym_package:
+                self.world.agents[1].mass = self.agent_mass
+            if self.joint.landmark is not None:
+                self.joint.landmark.mass = self.agent_mass
+        
+        if "mass_radius" in kwargs:
+            if self.asym_package:
+                self.mass.shape._radius = self.mass_radius
 
     def set_n_passages(self, val):
         if val == 4:

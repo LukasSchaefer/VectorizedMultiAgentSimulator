@@ -13,31 +13,19 @@ from vmas.simulator.core import Agent, World, Landmark, Sphere, Box, Line
 from vmas.simulator.scenario import BaseScenario
 from vmas.simulator.utils import Color, X, Y
 
+IMMUTABLES = [
+    "ai_red_agents",
+    "ai_blue_agents",
+    "n_blue_agents",
+    "n_red_agents",
+    "agent_size",
+    "goal_size",
+    "goal_depth",
+    "pitch_length",
+    "pitch_width",
+]
 
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
-        self.init_params(**kwargs)
-        world = self.init_world(batch_dim, device)
-        self.init_agents(world)
-        self.init_ball(world)
-        self.init_background(world)
-        self.init_walls(world)
-        self.init_goals(world)
-        # self.init_traj_pts(world)
-        self._done = torch.zeros(batch_dim, device=device, dtype=torch.bool)
-        return world
-
-    def reset_world_at(self, env_index: int = None):
-        self.reset_ball(env_index)
-        self.reset_agents(env_index)
-        self.reset_background(env_index)
-        self.reset_walls(env_index)
-        self.reset_goals(env_index)
-        self.reset_controllers(env_index)
-        if env_index is None:
-            self._done[:] = False
-        else:
-            self._done[env_index] = False
 
     def init_params(self, **kwargs):
         self.viewer_size = kwargs.get("viewer_size", (1200, 800))
@@ -57,6 +45,54 @@ class Scenario(BaseScenario):
         self.ball_size = kwargs.get("ball_size", 0.02)
         self.n_traj_points = kwargs.get("n_traj_points", 8)
         self.dense_reward_ratio = kwargs.get("dense_reward_ratio", 0.001)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
+        world = self.init_world(batch_dim, device)
+        self.init_agents(world)
+        self.init_ball(world)
+        self.init_background(world)
+        self.init_walls(world)
+        self.init_goals(world)
+        # self.init_traj_pts(world)
+        self._done = torch.zeros(batch_dim, device=device, dtype=torch.bool)
+        return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if any(key in kwargs for key in IMMUTABLES):
+            raise ValueError(f"Cannot change {IMMUTABLES} after initialisation")
+        
+        if "max_speed" in kwargs:
+            for agent in self.world.agents:
+                agent.max_speed = self.max_speed
+        
+        if "u_multiplier" in kwargs:
+            for agent in self.world.agents:
+                agent.u_multiplier = self.u_multiplier
+            self.ball.u_multiplier = self.u_multiplier
+        
+        if "ball_max_speed" in kwargs:
+            self.ball.max_speed = self.ball_max_speed
+        
+        if "ball_mass" in kwargs:
+            self.ball.mass = self.ball_mass
+        
+        if "ball_size" in kwargs:
+            self.ball.shape._radius = self.ball_size
+
+    def reset_world_at(self, env_index: int = None):
+        self.reset_ball(env_index)
+        self.reset_agents(env_index)
+        self.reset_background(env_index)
+        self.reset_walls(env_index)
+        self.reset_goals(env_index)
+        self.reset_controllers(env_index)
+        if env_index is None:
+            self._done[:] = False
+        else:
+            self._done[env_index] = False
 
     def init_world(self, batch_dim: int, device: torch.device):
         # Make world

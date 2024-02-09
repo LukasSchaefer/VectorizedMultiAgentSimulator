@@ -14,20 +14,28 @@ from vmas.simulator.utils import Color
 
 
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+
+    def init_params(self, **kwargs):
         self.random_start_angle = kwargs.get("random_start_angle", True)
         self.pos_shaping_factor = kwargs.get("pos_shaping_factor", 1)
         self.collision_reward = kwargs.get("collision_reward", -10)
         self.max_speed_1 = kwargs.get("max_speed_1", None)  # 0.05
 
-        self.pos_shaping_factor = 1
+        self.wall_length = kwargs.get("wall_length", 2)
+
+        self.agent_spacing = kwargs.get("agent_spacing", 0.5)
+        self.agent_radius = kwargs.get("agent_radius", 0.03)
+        self.agent_mass = kwargs.get("agent_mass", 1)
+
+        self.ball_radius = self.agent_radius
+
+        self.joint_mass = kwargs.get("joint_mass", 1)
+
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
 
         self.n_agents = 2
-
-        self.wall_length = 2
-        self.agent_spacing = 0.5
-        self.agent_radius = 0.03
-        self.ball_radius = self.agent_radius
 
         # Make world
         world = World(
@@ -42,14 +50,14 @@ class Scenario(BaseScenario):
             name="agent_0",
             shape=Sphere(self.agent_radius),
             u_multiplier=1,
-            mass=1,
+            mass=self.agent_mass,
         )
         world.add_agent(agent)
         agent = Agent(
             name="agent_1",
             shape=Sphere(self.agent_radius),
             u_multiplier=1,
-            mass=1,
+            mass=self.agent_mass,
             max_speed=self.max_speed_1,
         )
         world.add_agent(agent)
@@ -83,7 +91,7 @@ class Scenario(BaseScenario):
                     rotate_b=True,
                     collidable=False,
                     width=0,
-                    mass=1,
+                    mass=self.joint_mass,
                 )
             )
             world.add_joint(self.joints[i])
@@ -96,6 +104,28 @@ class Scenario(BaseScenario):
 
         return world
 
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        # arguments that require changes of agents
+        if any(key in kwargs for key in ["agent_radius", "agent_mass"]):
+            for agent in self.world.agents:
+                agent._shape.radius = self.agent_radius
+                agent.mass = self.agent_mass
+        
+        if "max_speed_1" in kwargs:
+            self.world.agents[1].max_speed = self.max_speed_1
+
+        # arguments that require changes the ball
+        if any(key in kwargs for key in ["ball_radius"]):
+            self.ball._shape.radius = self.ball_radius
+        
+        # arguments that require changes of joints
+        if self.joints and "joint_mass" in kwargs:
+            for joint in self.joints:
+                if joint.landmark is not None:
+                    joint.landmark.mass = self.joint_mass
+        
     def reset_world_at(self, env_index: int = None):
         start_angle = torch.zeros(
             (1, 1) if env_index is not None else (self.world.batch_dim, 1),

@@ -15,19 +15,21 @@ DEFAULT_ENERGY_COEFF = 0.02
 
 
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
-        n_agents = kwargs.get("n_agents", 4)
-        self.energy_coeff = kwargs.get(
-            "energy_coeff", DEFAULT_ENERGY_COEFF
-        )  # Weight of team energy penalty
+    def init_params(self, **kwargs):
+        self.n_agents = kwargs.get("n_agents", 4)
+        # Weight of team energy penalty
+        self.energy_coeff = kwargs.get("energy_coeff", DEFAULT_ENERGY_COEFF)
         self.start_same_point = kwargs.get("start_same_point", False)
-        self.agent_radius = 0.05
-        self.goal_radius = 0.03
 
+        self.agent_radius = kwargs.get("agent_radius", 0.05)
+        self.goal_radius = kwargs.get("goal_radius", 0.03)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
         # Make world
         world = World(batch_dim, device)
         # Add agents
-        for i in range(n_agents):
+        for i in range(self.n_agents):
             # Constraint: all agents have same action range and multiplier
             agent = Agent(
                 name=f"agent_{i}", collide=False, shape=Sphere(radius=self.agent_radius)
@@ -47,6 +49,16 @@ class Scenario(BaseScenario):
         self._done = torch.zeros(batch_dim, device=device, dtype=torch.bool)
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if "agent_radius" in kwargs:
+            for agent in self.world.agents:
+                agent.shape._radius = self.agent_radius
+        
+        if "goal_radius" in kwargs:
+            self.world._landmarks[0].shape._radius = self.goal_radius
 
     def reset_world_at(self, env_index: int = None):
         if self.start_same_point:

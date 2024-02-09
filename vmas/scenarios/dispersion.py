@@ -11,20 +11,23 @@ from vmas.simulator.utils import Color
 
 
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
-        n_agents = kwargs.get("n_agents", 4)
+    def init_params(self, **kwargs):
+        self.n_agents = kwargs.get("n_agents", 4)
         self.share_reward = kwargs.get("share_reward", False)
         self.penalise_by_time = kwargs.get("penalise_by_time", False)
         self.food_radius = kwargs.get("food_radius", 0.05)
         self.pos_range = kwargs.get("pos_range", 1.0)
-        n_food = kwargs.get("n_food", n_agents)
+        self.n_food = kwargs.get("n_food", self.n_agents)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
 
         # Make world
         world = World(
             batch_dim, device, x_semidim=self.pos_range, y_semidim=self.pos_range
         )
         # Add agents
-        for i in range(n_agents):
+        for i in range(self.n_agents):
             # Constraint: all agents have same action range and multiplier
             agent = Agent(
                 name=f"agent_{i}",
@@ -33,7 +36,7 @@ class Scenario(BaseScenario):
             )
             world.add_agent(agent)
         # Add landmarks
-        for i in range(n_food):
+        for i in range(self.n_food):
             food = Landmark(
                 name=f"food_{i}",
                 collide=False,
@@ -43,6 +46,20 @@ class Scenario(BaseScenario):
             world.add_landmark(food)
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if "n_agents" in kwargs or "n_food" in kwargs:
+            raise ValueError("n_agents and n_food cannot be changed after initialisation")
+        
+        if "pos_range" in kwargs:
+            self.world._x_semidim = self.pos_range
+            self.world._y_semidim = self.pos_range
+        
+        if "food_radius" in kwargs:
+            for landmark in self.world.landmarks:
+                landmark.shape._radius = self.food_radius
 
     def reset_world_at(self, env_index: int = None):
         for agent in self.world.agents:

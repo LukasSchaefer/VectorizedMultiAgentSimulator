@@ -20,23 +20,30 @@ if typing.TYPE_CHECKING:
 
 
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+
+    def init_params(self, **kwargs):
         self.n_agents = kwargs.get("n_agents", 5)
         self.n_targets = kwargs.get("n_targets", 7)
         self._min_dist_between_entities = kwargs.get("min_dist_between_entities", 0.2)
-        self._lidar_range = kwargs.get("lidar_range", 0.35)
         self._covering_range = kwargs.get("covering_range", 0.25)
         self._agents_per_target = kwargs.get("agents_per_target", 2)
         self.targets_respawn = kwargs.get("targets_respawn", True)
-        self.shared_reward = kwargs.get("shared_reward", False)
 
+        self.agent_radius = kwargs.get("agent_radius", 0.05)
+        self._lidar_range = kwargs.get("lidar_range", 0.35)
+
+        self.shared_reward = kwargs.get("shared_reward", False)
+        self.min_collision_distance = kwargs.get("min_collision_distance", 0.005)
         self.agent_collision_penalty = kwargs.get("agent_collision_penalty", 0)
         self.covering_rew_coeff = kwargs.get("covering_rew_coeff", 1.0)
         self.time_penalty = kwargs.get("time_penalty", 0)
 
+        self.world_drag = kwargs.get("world_drag", 0.25)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
+
         self._comms_range = self._lidar_range
-        self.min_collision_distance = 0.005
-        self.agent_radius = 0.05
         self.target_radius = self.agent_radius
 
         self.viewer_zoom = 1
@@ -50,7 +57,7 @@ class Scenario(BaseScenario):
             y_semidim=1,
             collision_force=500,
             substeps=2,
-            drag=0.25,
+            drag=self.world_drag,
         )
 
         # Add agents
@@ -105,6 +112,21 @@ class Scenario(BaseScenario):
         self.shared_covering_rew = torch.zeros(batch_dim, device=device)
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        # arguments that require changes of agents
+        if any(key in kwargs for key in ["agent_radius", "_lidar_range"]):
+            for agent in self.world.agents:
+                agent._shape.radius = self.agent_radius
+                for sensor in agent.sensors:
+                    if isinstance(sensor, Lidar):
+                        sensor._max_range = self._lidar_range
+        
+        # arguments that require changes of world
+        if "world_drag" in kwargs:
+            self.world.drag = self.world_drag
 
     def reset_world_at(self, env_index: int = None):
         placable_entities = self._targets[: self.n_targets] + self.world.agents

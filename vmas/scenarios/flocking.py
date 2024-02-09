@@ -14,19 +14,25 @@ from vmas.simulator.utils import Color, X, Y, ScenarioUtils
 
 
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
-        n_agents = kwargs.get("n_agents", 4)
-        n_obstacles = kwargs.get("n_obstacles", 5)
+    def init_params(self, **kwargs):
+        self.n_agents = kwargs.get("n_agents", 4)
+        self.n_obstacles = kwargs.get("n_obstacles", 5)
         self._min_dist_between_entities = kwargs.get("min_dist_between_entities", 0.15)
 
         self.collision_reward = kwargs.get("collision_reward", -0.1)
         self.dist_shaping_factor = kwargs.get("dist_shaping_factor", 1)
 
         self.plot_grid = True
-        self.desired_distance = 0.1
-        self.min_collision_distance = 0.005
-        self.x_dim = 1
-        self.y_dim = 1
+
+        self.desired_distance = kwargs.get("desired_distance", 0.1)
+        self.min_collision_distance = kwargs.get("min_collision_distance", 0.005)
+        self.x_dim = kwargs.get("x_dim", 1)
+        self.y_dim = kwargs.get("y_dim", 1)
+
+        self.landmark_radius = kwargs.get("landmark_radius", 0.1)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
 
         # Make world
         world = World(batch_dim, device, collision_force=400, substeps=5)
@@ -42,7 +48,7 @@ class Scenario(BaseScenario):
         goal_entity_filter: Callable[[Entity], bool] = lambda e: not isinstance(
             e, Agent
         )
-        for i in range(n_agents):
+        for i in range(self.n_agents):
             agent = Agent(
                 name=f"agent_{i}",
                 collide=True,
@@ -63,18 +69,26 @@ class Scenario(BaseScenario):
 
         # Add landmarks
         self.obstacles = []
-        for i in range(n_obstacles):
+        for i in range(self.n_obstacles):
             obstacle = Landmark(
                 name=f"obstacle_{i}",
                 collide=True,
                 movable=False,
-                shape=Sphere(radius=0.1),
+                shape=Sphere(radius=self.landmark_radius),
                 color=Color.RED,
             )
             world.add_landmark(obstacle)
             self.obstacles.append(obstacle)
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if "landmark_radius" in kwargs:
+            for landmark in self.obstacles:
+                landmark.shape._radius = self.landmark_radius
+
 
     def action_script_creator(self):
         def action_script(agent, world):

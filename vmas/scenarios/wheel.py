@@ -78,7 +78,7 @@ class Scenario(BaseScenario):
         is_first = agent == self.world.agents[0]
 
         if is_first:
-            self.rew = (self.line.state.ang_vel.abs() - self.desired_velocity).abs()
+            self.rew = (self.line.state.ang_vel.abs().squeeze(-1) - self.desired_velocity).abs()
 
         return -self.rew
 

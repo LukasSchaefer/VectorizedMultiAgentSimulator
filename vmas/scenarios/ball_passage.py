@@ -14,23 +14,27 @@ from vmas.simulator.utils import Color, Y, X
 
 
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+
+    def init_params(self, **kwargs):
         self.n_passages = kwargs.get("n_passages", 1)
+        assert 1 <= self.n_passages <= 20
         self.fixed_passage = kwargs.get("fixed_passage", False)
         self.random_start_angle = kwargs.get("random_start_angle", True)
-
-        assert 1 <= self.n_passages <= 20
-
-        self.pos_shaping_factor = 1
-        self.collision_reward = -0.06
-
-        self.n_agents = 2
-
-        self.agent_spacing = 0.5
-        self.agent_radius = 0.03333
+        self.pos_shaping_factor = kwargs.get("pos_shaping_factor", 1)
+        self.collision_reward = kwargs.get("collision_reward", -0.06)
+        self.n_agents = kwargs.get("n_agents", 2)
+        self.agent_spacing = kwargs.get("agent_spacing", 0.5)
+        self.agent_radius = kwargs.get("agent_radius", 0.03333)
+        self.agent_mass = kwargs.get("agent_mass", 2)
+        self.agent_drag = kwargs.get("agent_drag", 0.25)
         self.ball_radius = self.agent_radius
-        self.passage_width = 0.2
-        self.passage_length = 0.103
+        self.ball_friction = kwargs.get("ball_friction", 0.02)
+        self.ball_mass = kwargs.get("ball_mass", 1.0)
+        self.passage_width = kwargs("passage_width", 0.2)
+        self.passage_length = kwargs("passage_length", 0.103)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
 
         # Make world
         world = World(
@@ -47,8 +51,8 @@ class Scenario(BaseScenario):
                 name=f"agent_{i}",
                 shape=Sphere(self.agent_radius),
                 u_multiplier=0.7,
-                mass=2,
-                drag=0.25,
+                mass=self.agent_mass,
+                drag=self.agent_drag,
             )
             world.add_agent(agent)
 
@@ -65,9 +69,9 @@ class Scenario(BaseScenario):
             shape=Sphere(radius=self.ball_radius),
             collide=True,
             movable=True,
-            mass=1,
+            mass=self.ball_mass,
             color=Color.BLACK,
-            linear_friction=0.02,
+            linear_friction=self.ball_friction,
         )
         world.add_landmark(self.ball)
 
@@ -77,6 +81,22 @@ class Scenario(BaseScenario):
         self.collision_rew = self.pos_rew.clone()
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+        
+        # arguments that require changes of agents
+        if any([key in kwargs for key in ["agent_mass", "agent_drag", "agent_radius"]]):
+            for agent in self.world.agents:
+                agent.mass = self.agent_mass
+                agent.drag = self.agent_drag
+                agent._shape.radius = self.agent_radius
+        
+        # arguments that require changes of ball
+        if any([key in kwargs for key in ["ball_mass", "ball_friction", "ball_radius"]]):
+            self.ball.mass = self.ball
+            self.ball.linear_friction = self.ball_friction
+            self.ball._shape.radius = self.ball_radius
 
     def reset_world_at(self, env_index: int = None):
         start_angle = torch.zeros(
