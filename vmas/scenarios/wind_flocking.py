@@ -48,11 +48,11 @@ def get_line_angle_dist_0_180(angle, goal):
     ).squeeze(-1)
 
 
-class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
-        self.plot_grid = True
-        self.viewer_zoom = 2
+IMMUTABLES = ["use_controller", "v_range", "desired_vel", "f_range", "big_agent_radius", "small_agent_radius"]
 
+
+class Scenario(BaseScenario):
+    def init_params(self, **kwargs):
         # Reward
         self.vel_shaping_factor = kwargs.get("vel_shaping_factor", 1)
         self.dist_shaping_factor = kwargs.get("dist_shaping_factor", 1)
@@ -66,27 +66,38 @@ class Scenario(BaseScenario):
         self.observe_rel_vel = kwargs.get("observe_rel_vel", False)
         self.observe_pos = kwargs.get("observe_pos", True)
 
-        # Controller
         self.use_controller = kwargs.get("use_controller", True)
-        self.wind = torch.tensor(
-            [0, -kwargs.get("wind", 2)], device=device, dtype=torch.float32
-        ).expand(batch_dim, 2)
         self.v_range = kwargs.get("v_range", 0.5)
         self.desired_vel = kwargs.get("desired_vel", self.v_range)
         self.f_range = kwargs.get("f_range", 100)
 
-        controller_params = [1.5, 0.6, 0.002]
-        self.u_range = self.v_range if self.use_controller else self.f_range
-
-        # Other
         self.cover_angle_tolerance = kwargs.get("cover_angle_tolerance", 1)
         self.horizon = kwargs.get("horizon", 200)
+
+        self.linear_friction = kwargs.get("linear_friction", 0.1)
+
+        self.big_agent_radius = kwargs.get("big_agent_radius", 0.05)
+        self.small_agent_radius = kwargs.get("small_agent_radius", 0.03)
+        assert self.big_agent_radius > self.small_agent_radius, f"Big agent radius must be greater than small agent radius, but was given {self.big_agent_radius} and {self.small_agent_radius}"
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
+        self.plot_grid = True
+        self.viewer_zoom = 2
+
+        # Controller
+        self.wind = torch.tensor(
+            [0, -kwargs.get("wind", 2)], device=device, dtype=torch.float32
+        ).expand(batch_dim, 2)
+
+        controller_params = [1.5, 0.6, 0.002]
+        self.u_range = self.v_range if self.use_controller else self.f_range
 
         self.desired_distance = 1
         self.grid_spacing = self.desired_distance
 
         # Make world
-        world = World(batch_dim, device, drag=0, linear_friction=0.1)
+        world = World(batch_dim, device, drag=0, linear_friction=self.linear_friction)
 
         self.desired_vel = torch.tensor(
             [0.0, self.desired_vel], device=device, dtype=torch.float32
@@ -99,7 +110,7 @@ class Scenario(BaseScenario):
         self.big_agent = Agent(
             name="agent_0",
             render_action=True,
-            shape=Sphere(radius=0.05),
+            shape=Sphere(radius=self.big_agent_radius),
             u_range=self.u_range,
             v_range=self.v_range,
             f_range=self.f_range,
@@ -113,7 +124,7 @@ class Scenario(BaseScenario):
         self.small_agent = Agent(
             name="agent_1",
             render_action=True,
-            shape=Sphere(radius=0.03),
+            shape=Sphere(radius=self.small_agent_radius),
             u_range=self.u_range,
             v_range=self.v_range,
             f_range=self.f_range,
@@ -136,6 +147,34 @@ class Scenario(BaseScenario):
         self.t = self.dist_rew.clone()
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Cannot update {IMMUTABLES} after initialization")
+        
+        if "horizon" in kwargs:
+            self.max_pos = (self.horizon * self.world.dt) * self.desired_vel[Y]
+        
+        if "linear_friction" in kwargs:
+            self.world.linear_friction = self.linear_friction
+    
+    def get_mutable_arguments(self):
+        return [
+            "vel_shaping_factor",
+            "dist_shaping_factor",
+            "wind_shaping_factor",
+            "pos_shaping_factor",
+            "rot_shaping_factor",
+            "energy_shaping_factor",
+            "observe_rel_pos",
+            "observe_rel_vel",
+            "observe_pos",
+            "cover_angle_tolerance",
+            "horizon",
+            "linear_friction",
+        ]
 
     def set_wind(self, wind):
         self.wind = torch.tensor(

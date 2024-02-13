@@ -49,9 +49,13 @@ def get_line_angle_dist_0_180(angle, goal):
 
 IMMUTABLES = [
     "n_passages",
+    "fixed_passage",
     "joint_length",
     "asym_package",
+    "agent_radius",
+    "agent_radius_2",
     "mass_position",
+    "mass_radius",
     "middle_angle_180",
     "use_vel_controller",
     "passage_length",
@@ -92,6 +96,7 @@ class Scenario(BaseScenario):
         self.passage_length = kwargs.get("passage_length", 0.1476)
 
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
 
         assert self.n_passages == 3 or self.n_passages == 4
         if not self.observe_joint_angle:
@@ -243,26 +248,32 @@ class Scenario(BaseScenario):
         if "world_drag" in kwargs:
             self.world.drag = self.world_drag
         
-        if "agent_radius" in kwargs:
-            self.scenario_length = 2 + 2 * self.agent_radius
-            self.n_boxes = int(self.scenario_length // self.passage_length)
-
-            self.world.agents[0].shape._radius = self.agent_radius
-            for wall in self.walls:
-                wall.shape._length = 2 + self.agent_radius * 2
-        
-        if "agent_radius_2" in kwargs:
-            self.world.agents[1].shape._radius = self.agent_radius_2
-        
         if "agent_mass" in kwargs:
             if self.asym_package:
                 self.world.agents[1].mass = self.agent_mass
             if self.joint.landmark is not None:
                 self.joint.landmark.mass = self.agent_mass
         
-        if "mass_radius" in kwargs:
-            if self.asym_package:
-                self.mass.shape._radius = self.mass_radius
+        if not self.observe_joint_angle:
+            assert self.joint_angle_obs_noise == 0
+
+    def get_mutable_arguments(self):
+        return [
+            "random_start_angle",
+            "random_goal_angle",
+            "observe_joint_angle",
+            "joint_angle_obs_noise",
+            "asym_package",
+            "mass_ratio",
+            "max_speed_1",
+            "obs_noise",
+            "world_drag",
+            "agent_mass",
+            "pos_shaping_factor",
+            "rot_shaping_factor",
+            "collision_reward",
+            "energy_reward_coeff",
+        ]
 
     def set_n_passages(self, val):
         if val == 4:

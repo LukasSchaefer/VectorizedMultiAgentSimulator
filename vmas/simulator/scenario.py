@@ -37,6 +37,13 @@ class BaseScenario(ABC):
     def update_arguments(self, **kwargs):
         for key, value in kwargs.items():
             setattr(self, key, value)
+    
+    @abstractmethod
+    def get_mutable_arguments(self):
+        """
+        Returns a list of mutable arguments for the scenario
+        """
+        raise NotImplementedError()
 
     @property
     def world(self):

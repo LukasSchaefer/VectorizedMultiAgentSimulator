@@ -6,7 +6,7 @@ import time
 
 import torch
 
-from vmas import make_env
+from vmas import make_env, scenarios
 from vmas.simulator.core import Agent
 from vmas.simulator.utils import save_video
 
@@ -72,8 +72,6 @@ def use_vmas_env(
     scenario_name: str = "waterfall",
     n_agents: int = 4,
     continuous_actions: bool = True,
-    reset_on_done: bool = True,
-    record_episode_statistics: bool = False,
     dict_spaces: bool = False,
 ):
     """Example function to use a vmas environment
@@ -89,8 +87,6 @@ def use_vmas_env(
         n_steps (int): Number of steps before returning done
         max_steps (int): Maximum number of steps before returning done
         random_action (bool): Use random actions or have all agents perform the down action
-        reset_on_done (bool): Weather to reset the environment when done is True
-        record_episode_statistics (bool): Weather to record episode statistics in the info dict
         dict_spaces (bool): Weather to use dictionary i/o spaces with format {agent_name: tensor}
 
     Returns:
@@ -109,8 +105,6 @@ def use_vmas_env(
         # Environment specific variables
         n_agents=n_agents,
         max_steps=max_steps,
-        reset_on_done=reset_on_done,
-        record_episode_statistics=record_episode_statistics,
     )
 
     frame_list = []  # For creating a gif
@@ -159,16 +153,16 @@ def use_vmas_env(
 
 
 if __name__ == "__main__":
-    use_vmas_env(
-        scenario_name="balance",
-        render=False,
-        save_render=False,
-        random_action=False,
-        continuous_actions=False,
-        dict_spaces=False,
-        max_steps=200,
-        n_steps=500,
-        reset_on_done=True,
-        record_episode_statistics=True,
-        device="cpu",
-    )
+    for scenario in scenarios:
+        print(f"Running scenario: {scenario}")
+        use_vmas_env(
+            scenario_name=scenario,
+            render=False,
+            save_render=False,
+            random_action=False,
+            continuous_actions=False,
+            dict_spaces=False,
+            max_steps=200,
+            n_steps=500,
+            device="cpu",
+        )

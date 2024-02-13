@@ -19,9 +19,17 @@ if typing.TYPE_CHECKING:
     from vmas.simulator.rendering import Geom
 
 
+IMMUTABLES = [
+    "n_agents",
+    "collisions",
+    "agents_with_same_goal",
+    "split_goals",
+    "lidar_range",
+    "agent_radius",
+]
+
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
-        self.plot_grid = False
+    def init_params(self, **kwargs):
         self.n_agents = kwargs.get("n_agents", 4)
         self.collisions = kwargs.get("collisions", True)
 
@@ -39,6 +47,9 @@ class Scenario(BaseScenario):
 
         self.agent_collision_penalty = kwargs.get("agent_collision_penalty", -1)
 
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
+        self.plot_grid = False
         self.min_distance_between_entities = self.agent_radius * 2 + 0.05
         self.world_semidim = 1
         self.min_collision_distance = 0.005
@@ -117,6 +128,22 @@ class Scenario(BaseScenario):
         self.final_rew = self.pos_rew.clone()
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Cannot change {IMMUTABLES} after initialization")
+        
+    def get_mutable_arguments(self):
+        return [
+            "observe_all_goals",
+            "comms_range",
+            "shared_rew",
+            "pos_shaping_factor",
+            "final_reward",
+            "agent_collision_penalty"
+        ]
 
     def reset_world_at(self, env_index: int = None):
         ScenarioUtils.spawn_entities_randomly(

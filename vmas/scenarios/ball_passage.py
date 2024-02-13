@@ -13,8 +13,9 @@ from vmas.simulator.scenario import BaseScenario
 from vmas.simulator.utils import Color, Y, X
 
 
-class Scenario(BaseScenario):
+IMMUTABLES = ["n_passages", "n_agents", "agent_radius", "ball_radius"]
 
+class Scenario(BaseScenario):
     def init_params(self, **kwargs):
         self.n_passages = kwargs.get("n_passages", 1)
         assert 1 <= self.n_passages <= 20
@@ -30,8 +31,8 @@ class Scenario(BaseScenario):
         self.ball_radius = self.agent_radius
         self.ball_friction = kwargs.get("ball_friction", 0.02)
         self.ball_mass = kwargs.get("ball_mass", 1.0)
-        self.passage_width = kwargs("passage_width", 0.2)
-        self.passage_length = kwargs("passage_length", 0.103)
+        self.passage_width = kwargs.get("passage_width", 0.2)
+        self.passage_length = kwargs.get("passage_length", 0.103)
 
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
         self.init_params(**kwargs)
@@ -84,19 +85,35 @@ class Scenario(BaseScenario):
     
     def update_arguments(self, **kwargs):
         super().update_arguments(**kwargs)
+
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Arguments {IMMUTABLES} cannot be changed after initialisation")
         
         # arguments that require changes of agents
-        if any([key in kwargs for key in ["agent_mass", "agent_drag", "agent_radius"]]):
+        if any([key in kwargs for key in ["agent_mass", "agent_drag"]]):
             for agent in self.world.agents:
                 agent.mass = self.agent_mass
                 agent.drag = self.agent_drag
-                agent._shape.radius = self.agent_radius
         
         # arguments that require changes of ball
-        if any([key in kwargs for key in ["ball_mass", "ball_friction", "ball_radius"]]):
-            self.ball.mass = self.ball
+        if any([key in kwargs for key in ["ball_mass", "ball_friction"]]):
+            self.ball.mass = self.ball_mass
             self.ball.linear_friction = self.ball_friction
-            self.ball._shape.radius = self.ball_radius
+        
+    def get_mutable_arguments(self):
+        return [
+            "fixed_passage",
+            "random_start_angle",
+            "pos_shaping_factor",
+            "collision_reward",
+            "agent_spacing",
+            "agent_mass",
+            "agent_drag",
+            "ball_friction",
+            "ball_mass",
+            "passage_width",
+            "passage_length",
+        ]
 
     def reset_world_at(self, env_index: int = None):
         start_angle = torch.zeros(

@@ -10,20 +10,27 @@ from vmas.simulator.scenario import BaseScenario
 from vmas.simulator.utils import Color
 
 
+IMMUTABLES = ["n_passages", "agent_radius", "passage_length", "passage_width"]
+
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+    def init_params(self, **kwargs):
         self.n_passages = kwargs.get("n_passages", 1)
         self.shared_reward = kwargs.get("shared_reward", False)
+
+        self.agent_radius = kwargs.get("agent_radius", 0.03333)
+        self.agent_spacing = kwargs.get("agent_spacing", 0.1)
+
+        self.passage_width = kwargs.get("passage_width", 0.2)
+        self.passage_length = kwargs.get("passage_length", 0.103)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
 
         assert self.n_passages >= 1 and self.n_passages <= 20
 
         self.shaping_factor = 100
 
         self.n_agents = 5
-        self.agent_radius = 0.03333
-        self.agent_spacing = 0.1
-        self.passage_width = 0.2
-        self.passage_length = 0.103
 
         # Make world
         world = World(batch_dim, device, x_semidim=1, y_semidim=1)
@@ -57,6 +64,15 @@ class Scenario(BaseScenario):
             world.add_landmark(passage)
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Cannot change {IMMUTABLES} after initialization")
+        
+    def get_mutable_arguments(self):
+        return ["shared_rew", "agent_spacing"]
 
     def reset_world_at(self, env_index: int = None):
         central_agent_pos = torch.cat(

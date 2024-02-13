@@ -13,8 +13,21 @@ from vmas.simulator.sensors import Lidar
 from vmas.simulator.utils import Color, X, Y
 
 
+IMMUTABLES = [
+    "n_agents",
+    "lidar_range",
+    "xdim",
+    "ydim",
+    "grid_spacing",
+    "n_gaussians",
+    "cov",
+    "collisions",
+    "spawn_same_pos",
+    "agent_radius",
+]
+
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+    def init_params(self, **kwargs):
         self.n_agents = kwargs.get("n_agents", 3)
         self.shared_rew = kwargs.get("shared_rew", True)
 
@@ -30,6 +43,9 @@ class Scenario(BaseScenario):
         self.collisions = kwargs.get("collisions", True)
         self.spawn_same_pos = kwargs.get("spawn_same_pos", False)
         self.norm = kwargs.get("norm", True)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
 
         assert not (self.spawn_same_pos and self.collisions)
         assert (self.xdim / self.grid_spacing) % 1 == 0 and (
@@ -99,6 +115,15 @@ class Scenario(BaseScenario):
         ]
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Cannot update {IMMUTABLES} after initialization")
+
+    def get_mutable_arguments(self):
+        return ["shared_rew", "comms_range", "norm"]
 
     def reset_world_at(self, env_index: int = None):
         for i, loc in enumerate(self.locs):

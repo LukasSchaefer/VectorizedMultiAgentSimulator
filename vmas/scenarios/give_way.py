@@ -11,7 +11,7 @@ from vmas.simulator.utils import Color, TorchUtils
 from vmas.simulator.controllers.velocity_controller import VelocityController
 
 
-IMMUTABLES = ["v_range", "a_range"]
+IMMUTABLES = ["v_range", "a_range", "agent_radius"]
 
 class Scenario(BaseScenario):
     def init_params(self, **kwargs):
@@ -146,14 +146,12 @@ class Scenario(BaseScenario):
         if any(key in IMMUTABLES for key in kwargs):
             raise ValueError(f"Cannot change {IMMUTABLES} after initialization")
         
-        if any(key in kwargs for key in ["agent_radius", "agent_box_length", "agent_box_width", "box_agents"]):
+        if any(key in kwargs for key in ["agent_box_length", "agent_box_width", "box_agents"]):
             for agent in self.world.agents:
                 agent.shape = Box(
                     length=self.agent_box_length,
                     width=self.agent_box_width,
                 ) if self.box_agents else Sphere(radius=self.agent_radius)
-                if "agent_radius" in kwargs:
-                    agent.goal.shape = Sphere(radius=self.agent_radius / 2)
 
         if "linear_friction" in kwargs:
             self.world.linear_friction = self.linear_friction
@@ -163,6 +161,28 @@ class Scenario(BaseScenario):
         # World params
         if "world_drag" in kwargs:
             self.world.drag = self.world_drag
+    
+    def get_mutable_arguments(self):
+        return [
+            "box_agents",
+            "agent_box_length",
+            "agent_box_width",
+            "linear_friction",
+            "world_drag",
+            "obs_noise",
+            "mirror_passage",
+            "done_on_completion",
+            "observe_rel_pos",
+            "use_velocity_controller",
+            "min_input_norm",
+            "dt_delay",
+            "pos_shaping_factor",
+            "final_reward",
+            "energy_reward_coeff",
+            "agent_collision_penalty",
+            "passage_collision_penalty",
+            "obstacle_collision_penalty",
+        ]
     
     def reset_world_at(self, env_index: int = None):
         self.world.agents[0].set_pos(

@@ -14,6 +14,9 @@ from vmas.simulator.utils import Color, ScenarioUtils
 DEFAULT_ENERGY_COEFF = 0.02
 
 
+IMMUTABLES = ["n_agents", "agent_radius", "goal_radius"]
+
+
 class Scenario(BaseScenario):
     def init_params(self, **kwargs):
         self.n_agents = kwargs.get("n_agents", 4)
@@ -53,12 +56,18 @@ class Scenario(BaseScenario):
     def update_arguments(self, **kwargs):
         super().update_arguments(**kwargs)
 
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Arguments {IMMUTABLES} cannot be changed after initialisation")
+
         if "agent_radius" in kwargs:
             for agent in self.world.agents:
                 agent.shape._radius = self.agent_radius
         
         if "goal_radius" in kwargs:
             self.world._landmarks[0].shape._radius = self.goal_radius
+    
+    def get_mutable_arguments(self):
+        return ["energy_coeff", "start_same_point"]
 
     def reset_world_at(self, env_index: int = None):
         if self.start_same_point:

@@ -11,19 +11,27 @@ from vmas.simulator.scenario import BaseScenario
 from vmas.simulator.utils import Color, TorchUtils
 
 
+IMMUTABLES = ["n_agents", "agent_radius", "line_length"]
+
+
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
-        n_agents = kwargs.get("n_agents", 4)
+    def init_params(self, **kwargs):
+        self.n_agents = kwargs.get("n_agents", 4)
         self.line_length = kwargs.get("line_length", 2)
-        line_mass = kwargs.get("line_mass", 30)
+        self.line_mass = kwargs.get("line_mass", 30)
         self.desired_velocity = kwargs.get("desired_velocity", 0.05)
+
+        self.agent_radius = kwargs.get("agent_radius", 0.03)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
 
         # Make world
         world = World(batch_dim, device)
         # Add agents
-        for i in range(n_agents):
+        for i in range(self.n_agents):
             # Constraint: all agents have same action range and multiplier
-            agent = Agent(name=f"agent_{i}", u_multiplier=0.6, shape=Sphere(0.03))
+            agent = Agent(name=f"agent_{i}", u_multiplier=0.6, shape=Sphere(self.agent_radius))
             world.add_agent(agent)
         # Add landmarks
         self.line = Landmark(
@@ -31,7 +39,7 @@ class Scenario(BaseScenario):
             collide=True,
             rotatable=True,
             shape=Line(length=self.line_length),
-            mass=line_mass,
+            mass=self.line_mass,
             color=Color.BLACK,
         )
         world.add_landmark(self.line)
@@ -44,6 +52,18 @@ class Scenario(BaseScenario):
         world.add_landmark(center)
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Cannot update {IMMUTABLES} after initialization")
+
+        if "line_mass" in kwargs:
+            self.line.mass = self.line_mass
+        
+    def get_mutable_arguments(self):
+        return ["line_mass", "desired_velocity"]
 
     def reset_world_at(self, env_index: int = None):
         for agent in self.world.agents:

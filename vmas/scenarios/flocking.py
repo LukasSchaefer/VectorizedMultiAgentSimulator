@@ -13,11 +13,13 @@ from vmas.simulator.sensors import Lidar
 from vmas.simulator.utils import Color, X, Y, ScenarioUtils
 
 
+IMMUTABLES = ["n_agents", "n_obstacles", "landmark_radius"]
+
 class Scenario(BaseScenario):
     def init_params(self, **kwargs):
         self.n_agents = kwargs.get("n_agents", 4)
         self.n_obstacles = kwargs.get("n_obstacles", 5)
-        self._min_dist_between_entities = kwargs.get("min_dist_between_entities", 0.15)
+        self._min_dist_between_entities = kwargs.get("_min_dist_between_entities", 0.15)
 
         self.collision_reward = kwargs.get("collision_reward", -0.1)
         self.dist_shaping_factor = kwargs.get("dist_shaping_factor", 1)
@@ -84,11 +86,20 @@ class Scenario(BaseScenario):
     
     def update_arguments(self, **kwargs):
         super().update_arguments(**kwargs)
+    
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"{IMMUTABLES} cannot be changed after initialisation")
 
-        if "landmark_radius" in kwargs:
-            for landmark in self.obstacles:
-                landmark.shape._radius = self.landmark_radius
-
+    def get_mutable_arguments(self):
+        return [
+            "_min_dist_between_entities",
+            "collision_reward",
+            "dist_shaping_factor",
+            "desired_distance",
+            "min_collision_distance",
+            "x_dim",
+            "y_dim",
+        ]
 
     def action_script_creator(self):
         def action_script(agent, world):

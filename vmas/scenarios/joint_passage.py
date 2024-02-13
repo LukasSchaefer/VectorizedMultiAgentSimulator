@@ -41,8 +41,21 @@ def angle_to_vector(angle):
     return torch.cat([torch.cos(angle), torch.sin(angle)], dim=1)
 
 
+IMMUTABLES = [
+    "n_passages",
+    "fixed_passage",
+    "joint_length",
+    "asym_package",
+    "agent_radius",
+    "mass_position",
+    "mass_radius",
+    "passage_length",
+    "joint_length",
+]
+
+
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+    def init_params(self, **kwargs):
         self.n_passages = kwargs.get("n_passages", 1)
         self.fixed_passage = kwargs.get("fixed_passage", True)
         self.joint_length = kwargs.get("joint_length", 0.5)
@@ -62,6 +75,19 @@ class Scenario(BaseScenario):
         self.obs_noise = kwargs.get("obs_noise", 0.0)
         self.use_controller = kwargs.get("use_controller", False)
 
+        # World params
+        self.world_drag = kwargs.get("world_drag", 0.25 if not self.asym_package else 0.15)
+
+        # Agent params
+        self.agent_radius = kwargs.get("agent_radius", 0.03333)
+
+        # Other params
+        self.mass_radius = kwargs.get("mass_radius", self.agent_radius * (2 / 3))
+        self.passage_length = kwargs.get("passage_length", 0.1476)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
+
         self.plot_grid = True
         # Make world
         world = World(
@@ -72,7 +98,7 @@ class Scenario(BaseScenario):
             substeps=7 if not self.asym_package else 10,
             joint_force=900 if self.asym_package else 400,
             collision_force=2500 if self.asym_package else 1500,
-            drag=0.25 if not self.asym_package else 0.15,
+            drag=self.world_drag,
         )
 
         if not self.observe_joint_angle:
@@ -82,10 +108,7 @@ class Scenario(BaseScenario):
 
         self.n_agents = 2
 
-        self.agent_radius = 0.03333
-        self.mass_radius = self.agent_radius * (2 / 3)
         self.passage_width = 0.2
-        self.passage_length = 0.1476
         self.scenario_length = 2 * world.x_semidim + 2 * self.agent_radius
         self.n_boxes = int(self.scenario_length // self.passage_length)
         self.min_collision_distance = 0.005
@@ -194,6 +217,49 @@ class Scenario(BaseScenario):
         self.all_passed = torch.full((batch_dim,), False, device=device)
 
         return world
+
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if any(k in IMMUTABLES for k in kwargs):
+            raise ValueError(f"Tried to update immutable value from {IMMUTABLES}.")
+        
+        if "mass_ratio" in kwargs:
+            if self.asym_package:
+                self.mass.mass = self.mass_ratio
+            else:
+                self.world.agents[1].mass = self.mass_ratio
+        
+        if "max_speed_1" in kwargs:
+            self.world.agents[1].max_speed = self.max_speed_1
+        
+        if "obs_noise" in kwargs:
+            for agent in self.world.agents:
+                agent.obs_noise = self.obs_noise
+
+        if "world_drag" in kwargs:
+            self.world.drag = self.world_drag
+        
+        if not self.observe_joint_angle:
+            assert self.joint_angle_obs_noise == 0
+    
+    def get_mutable_arguments(self):
+        return [
+            "random_start_angle",
+            "random_goal_angle",
+            "observe_joint_angle",
+            "joint_angle_obs_noise",
+            "mass_ratio",
+            "max_speed_1",
+            "obs_noise",
+            "world_drag",
+            "pos_shaping_factor",
+            "rot_shaping_factor",
+            "collision_reward",
+            "energy_reward_coeff",
+            "all_passed_rot",
+            "use_controller",
+        ]
 
     def reset_world_at(self, env_index: int = None):
         start_angle = torch.zeros(

@@ -23,6 +23,7 @@ IMMUTABLES = [
     "goal_depth",
     "pitch_length",
     "pitch_width",
+    "n_traj_points",
 ]
 
 class Scenario(BaseScenario):
@@ -81,7 +82,17 @@ class Scenario(BaseScenario):
         
         if "ball_size" in kwargs:
             self.ball.shape._radius = self.ball_size
-
+    
+    def get_mutable_arguments(self):
+        return [
+            "max_speed",
+            "u_multiplier",
+            "ball_max_speed",
+            "ball_mass",
+            "ball_size",
+            "dense_reward_ratio",
+        ]
+    
     def reset_world_at(self, env_index: int = None):
         self.reset_ball(env_index)
         self.reset_agents(env_index)

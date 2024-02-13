@@ -77,6 +77,9 @@ class Environment(TorchVectorizedObject):
     
     def update_arguments(self, **kwargs):
         self.scenario.update_arguments(**kwargs)
+    
+    def get_mutable_arguments(self):
+        return self.scenario.get_mutable_arguments()
 
     def reset(
         self,

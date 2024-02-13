@@ -13,8 +13,10 @@ from vmas.simulator.scenario import BaseScenario
 from vmas.simulator.utils import Color
 
 
-class Scenario(BaseScenario):
+IMMUTABLES = ["agent_radius", "ball_radius"]
 
+
+class Scenario(BaseScenario):
     def init_params(self, **kwargs):
         self.random_start_angle = kwargs.get("random_start_angle", True)
         self.pos_shaping_factor = kwargs.get("pos_shaping_factor", 1)
@@ -107,24 +109,34 @@ class Scenario(BaseScenario):
     def update_arguments(self, **kwargs):
         super().update_arguments(**kwargs)
 
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Cannot change {IMMUTABLES} after initialization")
+
         # arguments that require changes of agents
-        if any(key in kwargs for key in ["agent_radius", "agent_mass"]):
+        if "agent_mass" in kwargs:
             for agent in self.world.agents:
-                agent._shape.radius = self.agent_radius
                 agent.mass = self.agent_mass
         
         if "max_speed_1" in kwargs:
             self.world.agents[1].max_speed = self.max_speed_1
 
-        # arguments that require changes the ball
-        if any(key in kwargs for key in ["ball_radius"]):
-            self.ball._shape.radius = self.ball_radius
-        
         # arguments that require changes of joints
         if self.joints and "joint_mass" in kwargs:
             for joint in self.joints:
                 if joint.landmark is not None:
                     joint.landmark.mass = self.joint_mass
+    
+    def get_mutable_arguments(self):
+        return [
+            "random_start_angle",
+            "pos_shaping_factor",
+            "collision_reward",
+            "max_speed_1",
+            "wall_length",
+            "agent_spacing",
+            "agent_mass",
+            "joint_mass",
+        ]
         
     def reset_world_at(self, env_index: int = None):
         start_angle = torch.zeros(

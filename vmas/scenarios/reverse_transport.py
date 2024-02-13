@@ -11,13 +11,20 @@ from vmas.simulator.scenario import BaseScenario
 from vmas.simulator.utils import Color
 
 
+IMMUTABLES = ["n_agents", "agent_radius", "goal_radius", "package_length", "package_width"]
+
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
-        n_agents = kwargs.get("n_agents", 4)
+    def init_params(self, **kwargs):
+        self.n_agents = kwargs.get("n_agents", 4)
         self.package_width = kwargs.get("package_width", 0.6)
         self.package_length = kwargs.get("package_length", 0.6)
         self.package_mass = kwargs.get("package_mass", 50)
 
+        self.agent_radius = kwargs.get("agent_radius", 0.03)
+        self.goal_radius = kwargs.get("goal_radius", 0.09)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
         self.shaping_factor = 100
 
         # Make world
@@ -25,14 +32,14 @@ class Scenario(BaseScenario):
             batch_dim, device, contact_margin=6e-3, substeps=5, collision_force=500
         )
         # Add agents
-        for i in range(n_agents):
-            agent = Agent(name=f"agent_{i}", shape=Sphere(0.03), u_multiplier=0.5)
+        for i in range(self.n_agents):
+            agent = Agent(name=f"agent_{i}", shape=Sphere(self.agent_radius), u_multiplier=0.5)
             world.add_agent(agent)
         # Add landmarks
         goal = Landmark(
             name="goal",
             collide=False,
-            shape=Sphere(radius=0.09),
+            shape=Sphere(radius=self.goal_radius),
             color=Color.LIGHT_GREEN,
         )
         world.add_landmark(goal)
@@ -41,7 +48,7 @@ class Scenario(BaseScenario):
             name=f"package {i}",
             collide=True,
             movable=True,
-            mass=50,
+            mass=self.package_mass,
             shape=Box(
                 length=self.package_length, width=self.package_width, hollow=True
             ),
@@ -51,6 +58,18 @@ class Scenario(BaseScenario):
         world.add_landmark(self.package)
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Cannot change {IMMUTABLES} after initialization")
+        
+        if "package_mass" in kwargs:
+            self.package.mass = self.package_mass
+        
+    def get_mutable_arguments(self):
+        return ["package_mass"]
 
     def reset_world_at(self, env_index: int = None):
         package_pos = torch.zeros(

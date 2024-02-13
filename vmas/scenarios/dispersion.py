@@ -10,12 +10,15 @@ from vmas.simulator.scenario import BaseScenario
 from vmas.simulator.utils import Color
 
 
+IMMUTABLES = ["n_agents", "n_food", "agent_radius", "food_radius"]
+
 class Scenario(BaseScenario):
     def init_params(self, **kwargs):
         self.n_agents = kwargs.get("n_agents", 4)
         self.share_reward = kwargs.get("share_reward", False)
         self.penalise_by_time = kwargs.get("penalise_by_time", False)
         self.food_radius = kwargs.get("food_radius", 0.05)
+        self.agent_radius = kwargs.get("agent_radius", 0.035)
         self.pos_range = kwargs.get("pos_range", 1.0)
         self.n_food = kwargs.get("n_food", self.n_agents)
 
@@ -32,7 +35,7 @@ class Scenario(BaseScenario):
             agent = Agent(
                 name=f"agent_{i}",
                 collide=False,
-                shape=Sphere(radius=0.035),
+                shape=Sphere(radius=self.agent_radius),
             )
             world.add_agent(agent)
         # Add landmarks
@@ -50,16 +53,19 @@ class Scenario(BaseScenario):
     def update_arguments(self, **kwargs):
         super().update_arguments(**kwargs)
 
-        if "n_agents" in kwargs or "n_food" in kwargs:
-            raise ValueError("n_agents and n_food cannot be changed after initialisation")
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Arguments {IMMUTABLES} cannot be changed after initialisation")
         
         if "pos_range" in kwargs:
             self.world._x_semidim = self.pos_range
             self.world._y_semidim = self.pos_range
         
-        if "food_radius" in kwargs:
-            for landmark in self.world.landmarks:
-                landmark.shape._radius = self.food_radius
+    def get_mutable_arguments(self):
+        return [
+            "share_reward",
+            "penalise_by_time",
+            "pos_range",
+        ]
 
     def reset_world_at(self, env_index: int = None):
         for agent in self.world.agents:

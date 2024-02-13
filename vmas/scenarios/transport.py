@@ -11,17 +11,24 @@ from vmas.simulator.scenario import BaseScenario
 from vmas.simulator.utils import Color, ScenarioUtils
 
 
+IMMUTABLES = ["n_agents", "n_packages", "goal_radius", "agent_radius", "package_length", "package_width"]
+
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
-        n_agents = kwargs.get("n_agents", 4)
+    def init_params(self, **kwargs):
+        self.n_agents = kwargs.get("n_agents", 4)
         self.n_packages = kwargs.get("n_packages", 1)
         self.package_width = kwargs.get("package_width", 0.15)
         self.package_length = kwargs.get("package_length", 0.15)
         self.package_mass = kwargs.get("package_mass", 50)
 
+        self.goal_radius = kwargs.get("goal_radius", 0.15)
+
+        self.agent_radius = kwargs.get("agent_radius", 0.03)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
         self.shaping_factor = 100
         self.world_semidim = 1
-        self.agent_radius = 0.03
 
         # Make world
         world = World(
@@ -35,7 +42,7 @@ class Scenario(BaseScenario):
             + max(self.package_length, self.package_width),
         )
         # Add agents
-        for i in range(n_agents):
+        for i in range(self.n_agents):
             agent = Agent(
                 name=f"agent_{i}", shape=Sphere(self.agent_radius), u_multiplier=0.6
             )
@@ -44,7 +51,7 @@ class Scenario(BaseScenario):
         goal = Landmark(
             name="goal",
             collide=False,
-            shape=Sphere(radius=0.15),
+            shape=Sphere(radius=self.goal_radius),
             color=Color.LIGHT_GREEN,
         )
         world.add_landmark(goal)
@@ -54,7 +61,7 @@ class Scenario(BaseScenario):
                 name=f"package {i}",
                 collide=True,
                 movable=True,
-                mass=50,
+                mass=self.package_mass,
                 shape=Box(length=self.package_length, width=self.package_width),
                 color=Color.RED,
             )
@@ -63,6 +70,19 @@ class Scenario(BaseScenario):
             world.add_landmark(package)
 
         return world
+    
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Cannot update {IMMUTABLES} after initialization")
+        
+        if "package_mass" in kwargs:
+            for package in self.packages:
+                package.mass = self.package_mass
+        
+    def get_mutable_arguments(self):
+        return ["package_mass"]
 
     def reset_world_at(self, env_index: int = None):
         # Random pos between -1 and 1

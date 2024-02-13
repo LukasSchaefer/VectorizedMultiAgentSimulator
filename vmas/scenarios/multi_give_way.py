@@ -16,12 +16,14 @@ if typing.TYPE_CHECKING:
     from vmas.simulator.rendering import Geom
 
 
+IMMUTABLES = ["n_agents", "u_range", "n_agents", "agent_radius"]
+
+
 class Scenario(BaseScenario):
-    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+    def init_params(self, **kwargs):
         self.u_range = kwargs.get("u_range", 0.5)
         self.a_range = kwargs.get("a_range", 1)
         self.obs_noise = kwargs.get("obs_noise", 0)
-        self.box_agents = kwargs.get("box_agents", False)
         self.linear_friction = kwargs.get("linear_friction", 0.1)
         self.min_input_norm = kwargs.get("min_input_norm", 0.08)
         self.comms_range = kwargs.get("comms_range", 5)
@@ -36,11 +38,18 @@ class Scenario(BaseScenario):
         # self.passage_collision_penalty = kwargs.get("passage_collision_penalty", 0)
         # self.obstacle_collision_penalty = kwargs.get("obstacle_collision_penalty", 0)
 
+        self.box_agents = kwargs.get("box_agents", False)
+        self.agent_radius = kwargs.get("agent_radius", 0.16)
+        self.agent_box_length = kwargs.get("agent_box_length", 0.32)
+        self.agent_box_width = kwargs.get("agent_box_width", 0.24)
+
+    def make_world(self, batch_dim: int, device: torch.device, **kwargs):
+        self.init_params(**kwargs)
+
         self.viewer_zoom = 1.7
 
         controller_params = [2, 6, 0.002]
 
-        self.n_agents = 4
         self.f_range = self.a_range + self.linear_friction
 
         # Make world#
@@ -53,10 +62,6 @@ class Scenario(BaseScenario):
             substeps=16 if self.box_agents else 5,
             collision_force=10000 if self.box_agents else 500,
         )
-
-        self.agent_radius = 0.16
-        self.agent_box_length = 0.32
-        self.agent_box_width = 0.24
 
         self.min_collision_distance = 0.005
 
@@ -97,6 +102,53 @@ class Scenario(BaseScenario):
         self.final_rew = self.pos_rew.clone()
 
         return world
+
+    def update_arguments(self, **kwargs):
+        super().update_arguments(**kwargs)
+
+        if any(k in IMMUTABLES for k in kwargs):
+            raise ValueError(f"Cannot change immutable parameters {IMMUTABLES}")
+
+        if any(k in ["a_range", "linear_friction"] for k in kwargs):
+            self.f_range = self.a_range + self.linear_friction
+            for agent in self.world.agents:
+                agent.f_range = self.f_range
+        
+        if "linear_friction" in kwargs:
+            self.world.linear_friction = self.linear_friction
+            for agent in self.world.agents:
+                agent.linear_friction = self.linear_friction
+        
+        if any(k in ["box_agents", "agent_box_length", "agent_box_width"] for k in kwargs):
+            # change agent shapes
+            if self.box_agents:
+                self.world._substeps = 16
+                self.world._collision_force = 10000
+                for agent in self.world.agents:
+                    agent.shape = Box(
+                        length=self.agent_box_length, width=self.agent_box_width
+                    )
+            else:
+                self.world._substeps = 5
+                self.world._collision_force = 500
+                for agent in self.world.agents:
+                    agent.shape = Sphere(radius=self.agent_radius)
+
+    def get_mutable_arguments(self):
+        return [
+            "a_range",
+            "obs_noise",
+            "linear_friction",
+            "min_input_norm",
+            "comms_range",
+            "shared_rew",
+            "pos_shaping_factor",
+            "final_reward",
+            "agent_collision_penalty",
+            "box_agents",
+            "agent_box_length",
+            "agent_box_width",
+        ]
 
     def reset_world_at(self, env_index: int = None):
         for i, agent in enumerate(self.world.agents):

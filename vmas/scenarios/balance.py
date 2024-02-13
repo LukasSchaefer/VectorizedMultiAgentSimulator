@@ -11,6 +11,8 @@ from vmas.simulator.scenario import BaseScenario
 from vmas.simulator.utils import Color, Y
 
 
+IMMUTABLES = ["n_agents", "agent_radius", "line_length"]
+
 class Scenario(BaseScenario):
     def init_params(self, **kwargs):
         self.n_agents = kwargs.get("n_agents", 3)
@@ -86,24 +88,31 @@ class Scenario(BaseScenario):
     
     def update_arguments(self, **kwargs):
         super().update_arguments(**kwargs)
+
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Cannot change {IMMUTABLES} after initialization")
         
         # arguments that require changes to the world
         if "world_gravity" in kwargs:
             self.world._gravity = self.world_gravity
-        
-        # arguments that require changes of agents
-        if "agent_radius" in kwargs:
-            for agent in self.world.agents:
-                agent._shape.radius = self.agent_radius
         
         # arguments that require changes the package
         if "package_mass" in kwargs:
             self.package.mass = self.package_mass
         
         # arguments that require changes of the line
-        if any(key in kwargs for key in ["line_length", "line_mass"]):
-            self.line._shape.length = self.line_length
+        if "line_mass" in kwargs:
             self.line.mass = self.line_mass
+    
+    def get_mutable_arguments(self):
+        return [
+            "world_gravity",
+            "package_mass",
+            "line_mass",
+            "random_package_pos_on_line",
+            "shaping_factor",
+            "fall_reward",
+        ]
         
     def reset_world_at(self, env_index: int = None):
         goal_pos = torch.cat(

@@ -13,6 +13,8 @@ from vmas.simulator.scenario import BaseScenario
 from vmas.simulator.utils import X, Color, JOINT_FORCE
 
 
+IMMUTABLES = ["n_agents", "joints", "desired_radius", "agent_radius", "ball_radius"]
+
 class Scenario(BaseScenario):
 
     def init_params(self, **kwargs):
@@ -23,7 +25,7 @@ class Scenario(BaseScenario):
 
         self.world_drag = kwargs.get("world_drag", 0.0)
 
-        self.n_agents = kwargs.get("n_agents", 2)
+        self.n_agents = 2
 
         self.desired_speed = kwargs.get("desired_speed", 1)
         self.desired_radius = kwargs.get("desired_radius", 0.5)
@@ -92,15 +94,16 @@ class Scenario(BaseScenario):
     def update_arguments(self, **kwargs):
         super().update_arguments(**kwargs)
 
+        if any(k in kwargs for k in IMMUTABLES):
+            raise ValueError(f"Arguments {IMMUTABLES} cannot be changed after initialisation")
+
         # arguments that require changes of agents
-        if any(key in kwargs for key in ["agent_radius", "agent_drag"]):
+        if "agent_drag" in kwargs:
             for agent in self.world.agents:
                 agent.drag = self.agent_drag
-                agent._shape.radius = self.agent_radius
 
         # arguments that require changes the ball
-        if any(key in kwargs for key in ["ball_radius", "ball_friction"]):
-            self.ball._shape.radius = self.ball_radius
+        if "ball_friction" in kwargs:
             self.ball.linear_friction = self.ball_friction
         
         # arguments that require changes of joints
@@ -112,6 +115,19 @@ class Scenario(BaseScenario):
         # arguments that require changes of the world
         if "world_drag" in kwargs:
             self.world._drag = self.world_drag
+    
+    def get_mutable_arguments(self):
+        return [
+            "pos_shaping_factor",
+            "speed_shaping_factor",
+            "dist_shaping_factor",
+            "world_drag",
+            "desired_speed",
+            "agent_spacing",
+            "agent_drag",
+            "ball_friction",
+            "joint_mass",
+        ]
 
     def reset_world_at(self, env_index: int = None):
         ball_pos = torch.zeros(
