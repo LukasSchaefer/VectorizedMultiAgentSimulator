@@ -41,10 +41,14 @@ class Scenario(BaseScenario):
 
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
         self.init_params(**kwargs)
-        if torch.is_tensor(self.rew_on_goal):
-            assert self.rew_on_goal.shape[0] == batch_dim
-            if self.rew_on_goal.dim() > 1:
-                self.rew_on_goal = self.rew_on_goal.reshape(batch_dim)
+
+        for rew_factor in ["rew_dist_shaping_factor", "rew_on_goal"]:
+            if rew_factor in kwargs:
+                value = getattr(self, rew_factor)
+                if torch.is_tensor(value):
+                    assert value.shape[0] == self.world.batch_dim
+                    if value.dim() > 1:
+                        setattr(self, rew_factor, value.reshape(self.world.batch_dim))
 
         # Make world
         world = World(
@@ -89,6 +93,14 @@ class Scenario(BaseScenario):
         
         if "world_drag" in kwargs:
             self.world.drag = self.world_drag
+        
+        for rew_factor in ["rew_dist_shaping_factor", "rew_on_goal"]:
+            if rew_factor in kwargs:
+                value = getattr(self, rew_factor)
+                if torch.is_tensor(value):
+                    assert value.shape[0] == self.world.batch_dim
+                    if value.dim() > 1:
+                        setattr(self, rew_factor, value.reshape(self.world.batch_dim))
         
     def get_mutable_arguments(self):
         return ["package_mass", "world_drag"]
@@ -233,7 +245,11 @@ class Scenario(BaseScenario):
             )
 
     def done(self):
-        if self.terminate_on_goal:
+        if torch.is_tensor(self.terminate_on_goal):
+            assert all(self.terminate_on_goal) or not any(self.terminate_on_goal), "terminate_on_goal must be either True or False for all environments"
+
+        if (not torch.is_tensor(self.terminate_on_goal) and self.terminate_on_goal) or (
+            torch.is_tensor(self.terminate_on_goal) and all(self.terminate_on_goal)):
             return self.package.on_goal
         else:
             return torch.zeros(self.world.batch_dim, dtype=torch.bool, device=self.world.device)
