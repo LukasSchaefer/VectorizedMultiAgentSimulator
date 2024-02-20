@@ -41,6 +41,10 @@ class Scenario(BaseScenario):
 
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
         self.init_params(**kwargs)
+        if torch.is_tensor(self.rew_on_goal):
+            assert self.rew_on_goal.shape[0] == batch_dim
+            if self.rew_on_goal.dim() > 1:
+                self.rew_on_goal = self.rew_on_goal.reshape(batch_dim)
 
         # Make world
         world = World(
@@ -198,7 +202,7 @@ class Scenario(BaseScenario):
             )
             self.package.global_shaping = package_shaping
 
-            self.rew[self.package.on_goal] += self.rew_on_goal
+            self.rew[self.package.on_goal] += self.rew_on_goal[self.package.on_goal]
 
         return self.rew
 
