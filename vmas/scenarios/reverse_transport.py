@@ -8,10 +8,18 @@ import torch
 from vmas import render_interactively
 from vmas.simulator.core import Agent, Box, Landmark, Sphere, World
 from vmas.simulator.scenario import BaseScenario
-from vmas.simulator.utils import Color
+from vmas.simulator.utils import Color, DRAG
 
 
-IMMUTABLES = ["n_agents", "agent_radius", "goal_radius", "package_length", "package_width"]
+IMMUTABLES = [
+    "n_agents",
+    "observe_other_agents",
+    "agent_radius",
+    "goal_radius",
+    "package_length",
+    "package_width",
+    "collision_force",
+]
 
 class Scenario(BaseScenario):
     def init_params(self, **kwargs):
@@ -19,17 +27,24 @@ class Scenario(BaseScenario):
         self.package_width = kwargs.get("package_width", 0.6)
         self.package_length = kwargs.get("package_length", 0.6)
         self.package_mass = kwargs.get("package_mass", 50)
+        self.observe_other_agents = kwargs.get("observe_other_agents", False)
 
         self.agent_radius = kwargs.get("agent_radius", 0.03)
         self.goal_radius = kwargs.get("goal_radius", 0.09)
 
+        self.collision_force = kwargs.get("collision_force", 500)
+        self.world_drag = kwargs.get("world_drag", DRAG)
+
+        self.rew_dist_shaping_factor = kwargs.get("rew_dist_shaping_factor", 100)
+        self.rew_on_goal = kwargs.get("rew_on_goal", 0)
+        self.terminate_on_goal = kwargs.get("terminate_on_goal", True)
+
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
         self.init_params(**kwargs)
-        self.shaping_factor = 100
 
         # Make world
         world = World(
-            batch_dim, device, contact_margin=6e-3, substeps=5, collision_force=500
+            batch_dim, device, contact_margin=6e-3, substeps=5, collision_force=self.collision_force, drag=self.world_drag,
         )
         # Add agents
         for i in range(self.n_agents):
@@ -67,6 +82,9 @@ class Scenario(BaseScenario):
         
         if "package_mass" in kwargs:
             self.package.mass = self.package_mass
+        
+        if "world_drag" in kwargs:
+            self.world.drag = self.world_drag
         
     def get_mutable_arguments(self):
         return ["package_mass"]
@@ -137,7 +155,7 @@ class Scenario(BaseScenario):
                 torch.linalg.vector_norm(
                     self.package.state.pos - self.package.goal.state.pos, dim=1
                 )
-                * self.shaping_factor
+                * self.rew_dist_shaping_factor
             )
             self.package.on_goal = torch.zeros(
                 self.world.batch_dim, dtype=torch.bool, device=self.world.device
@@ -148,7 +166,7 @@ class Scenario(BaseScenario):
                     self.package.state.pos[env_index]
                     - self.package.goal.state.pos[env_index]
                 )
-                * self.shaping_factor
+                * self.rew_dist_shaping_factor
             )
             self.package.on_goal[env_index] = False
 
@@ -173,36 +191,48 @@ class Scenario(BaseScenario):
                 Color.GREEN.value, device=self.world.device, dtype=torch.float32
             )
 
-            package_shaping = self.package.dist_to_goal * self.shaping_factor
+            package_shaping = self.package.dist_to_goal * self.rew_dist_shaping_factor
             self.rew[~self.package.on_goal] += (
                 self.package.global_shaping[~self.package.on_goal]
                 - package_shaping[~self.package.on_goal]
             )
             self.package.global_shaping = package_shaping
 
-            self.rew[~self.package.on_goal] += (
-                self.package.global_shaping[~self.package.on_goal]
-                - package_shaping[~self.package.on_goal]
-            )
-            self.package.global_shaping = package_shaping
+            self.rew[self.package.on_goal] += self.rew_on_goal
 
         return self.rew
 
     def observation(self, agent: Agent):
-        return torch.cat(
-            [
-                agent.state.pos,
-                agent.state.vel,
-                self.package.state.vel,
-                self.package.state.pos - agent.state.pos,
-                self.package.state.pos - self.package.goal.state.pos,
-            ],
-            dim=-1,
-        )
+        if self.observe_other_agents:
+            # observe own pos and vel
+            observe_data = [agent.state.pos, agent.state.vel]
+            # observe other agent pos and vel
+            for other_agent in [other_agent for other_agent in self.world.agents if other_agent != agent]:
+                observe_data.extend([other_agent.state.pos, other_agent.state.vel])
+            # observe package vel and relative pos
+            observe_data.extend([self.package.state.vel, self.package.state.pos - agent.state.pos])
+            # observe package goal relative pos
+            observe_data.append(self.package.state.pos - self.package.goal.state.pos)
+            return torch.cat(observe_data, dim=-1)
+        else:
+            # observe own pos and vel, package vel and relative pos, package goal relative pos
+            # (don't observe other agent pos and vel)
+            return torch.cat(
+                [
+                    agent.state.pos,
+                    agent.state.vel,
+                    self.package.state.vel,
+                    self.package.state.pos - agent.state.pos,
+                    self.package.state.pos - self.package.goal.state.pos,
+                ],
+                dim=-1,
+            )
 
     def done(self):
-        return self.package.on_goal
-
+        if self.terminate_on_goal:
+            return self.package.on_goal
+        else:
+            return torch.zeros(self.world.batch_dim, dtype=torch.bool, device=self.world.device)
 
 if __name__ == "__main__":
     render_interactively(
@@ -211,5 +241,8 @@ if __name__ == "__main__":
         n_agents=4,
         package_width=0.6,
         package_length=0.6,
-        package_mass=50,
+        # terminate_on_goal=False,
+        # package_mass=0.5,
+        # rew_on_goal=5,
+        # world_drag=DRAG / 2,
     )

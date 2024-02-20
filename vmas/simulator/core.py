@@ -1269,6 +1269,24 @@ class World(TorchVectorizedObject):
     @property
     def dim_c(self):
         return self._dim_c
+    
+    @property
+    def drag(self):
+        return self._drag
+
+    @drag.setter
+    def drag(self, value):
+        if isinstance(value, Tensor):
+            assert value.shape[0] == self.batch_dim, (
+                f"Friction value must match batch dim, got {value.shape[0]}, expected {self.batch_dim}"
+            )
+        else:
+            value = (
+                torch.tensor(value, device=self.device, dtype=torch.float32).expand(self.batch_dim)
+                if value is not None
+                else value
+            )
+        self._drag = value.reshape(self.batch_dim, 1)
 
     @property
     def joints(self):
