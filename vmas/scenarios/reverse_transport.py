@@ -87,7 +87,7 @@ class Scenario(BaseScenario):
             self.world.drag = self.world_drag
         
     def get_mutable_arguments(self):
-        return ["package_mass"]
+        return ["package_mass", "world_drag"]
 
     def reset_world_at(self, env_index: int = None):
         package_pos = torch.zeros(
