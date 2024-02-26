@@ -214,7 +214,11 @@ class Scenario(BaseScenario):
             )
             self.package.global_shaping = package_shaping
 
-            self.rew[self.package.on_goal] += self.rew_on_goal[self.package.on_goal]
+            if torch.is_tensor(self.rew_on_goal):
+                assert self.rew_on_goal.shape[0] == self.world.batch_dim
+                self.rew[self.package.on_goal] += self.rew_on_goal[self.package.on_goal]
+            else:
+                self.rew[self.package.on_goal] += self.rew_on_goal
 
         return self.rew
 
