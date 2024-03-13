@@ -46,9 +46,9 @@ class Scenario(BaseScenario):
             if rew_factor in kwargs:
                 value = getattr(self, rew_factor)
                 if torch.is_tensor(value):
-                    assert value.shape[0] == self.world.batch_dim
+                    assert value.shape[0] == batch_dim
                     if value.dim() > 1:
-                        setattr(self, rew_factor, value.reshape(self.world.batch_dim))
+                        setattr(self, rew_factor, value.reshape(batch_dim))
 
         # Make world
         world = World(
