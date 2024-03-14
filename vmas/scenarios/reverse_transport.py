@@ -83,10 +83,7 @@ class Scenario(BaseScenario):
         return world
     
     def update_arguments(self, **kwargs):
-        super().update_arguments(**kwargs)
-
-        if any(k in kwargs for k in IMMUTABLES):
-            raise ValueError(f"Cannot change {IMMUTABLES} after initialization")
+        super().update_arguments(IMMUTABLES, **kwargs)
         
         if "package_mass" in kwargs:
             self.package.mass = self.package_mass

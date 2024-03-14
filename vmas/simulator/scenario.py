@@ -34,7 +34,12 @@ class BaseScenario(ABC):
         # The distance between lines in the background grid
         self.grid_spacing = 0.1
 
-    def update_arguments(self, **kwargs):
+    def update_arguments(self, immutables, **kwargs):
+        if any(k in kwargs for k in immutables):
+            assert all(
+                getattr(self, k) == kwargs[k] for k in immutables if k in kwargs
+            ), f"Cannot change {immutables} after initialization"
+
         for key, value in kwargs.items():
             setattr(self, key, value)
     

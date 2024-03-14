@@ -141,10 +141,7 @@ class Scenario(BaseScenario):
         return world
     
     def update_arguments(self, **kwargs):
-        super().update_arguments(**kwargs)
-
-        if any(key in IMMUTABLES for key in kwargs):
-            raise ValueError(f"Cannot change {IMMUTABLES} after initialization")
+        super().update_arguments(IMMUTABLES, **kwargs)
         
         if any(key in kwargs for key in ["agent_box_length", "agent_box_width", "box_agents"]):
             for agent in self.world.agents:

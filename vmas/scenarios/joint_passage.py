@@ -219,10 +219,7 @@ class Scenario(BaseScenario):
         return world
 
     def update_arguments(self, **kwargs):
-        super().update_arguments(**kwargs)
-
-        if any(k in IMMUTABLES for k in kwargs):
-            raise ValueError(f"Tried to update immutable value from {IMMUTABLES}.")
+        super().update_arguments(IMMUTABLES, **kwargs)
         
         if "mass_ratio" in kwargs:
             if self.asym_package:

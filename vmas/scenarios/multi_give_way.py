@@ -104,10 +104,7 @@ class Scenario(BaseScenario):
         return world
 
     def update_arguments(self, **kwargs):
-        super().update_arguments(**kwargs)
-
-        if any(k in IMMUTABLES for k in kwargs):
-            raise ValueError(f"Cannot change immutable parameters {IMMUTABLES}")
+        super().update_arguments(IMMUTABLES, **kwargs)
 
         if any(k in ["a_range", "linear_friction"] for k in kwargs):
             self.f_range = self.a_range + self.linear_friction

@@ -149,10 +149,7 @@ class Scenario(BaseScenario):
         return world
     
     def update_arguments(self, **kwargs):
-        super().update_arguments(**kwargs)
-
-        if any(k in kwargs for k in IMMUTABLES):
-            raise ValueError(f"Cannot update {IMMUTABLES} after initialization")
+        super().update_arguments(IMMUTABLES, **kwargs)
         
         if "horizon" in kwargs:
             self.max_pos = (self.horizon * self.world.dt) * self.desired_vel[Y]

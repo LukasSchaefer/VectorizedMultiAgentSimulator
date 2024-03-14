@@ -60,10 +60,7 @@ class Scenario(BaseScenario):
         return world
     
     def update_arguments(self, **kwargs):
-        super().update_arguments(**kwargs)
-
-        if any(key in kwargs for key in IMMUTABLES):
-            raise ValueError(f"Cannot change {IMMUTABLES} after initialisation")
+        super().update_arguments(IMMUTABLES, **kwargs)
         
         if "max_speed" in kwargs:
             for agent in self.world.agents:
