@@ -11,7 +11,16 @@ from vmas.simulator.scenario import BaseScenario
 from vmas.simulator.utils import Color, ScenarioUtils
 
 
-IMMUTABLES = ["n_agents", "n_packages", "goal_radius", "agent_radius", "package_length", "package_width"]
+IMMUTABLES = [
+    "n_agents",
+    "n_packages",
+    "goal_radius",
+    "agent_radius",
+    "package_length",
+    "package_width",
+    "observe_other_agents",
+    "observe_n_packages",
+]
 
 class Scenario(BaseScenario):
     def init_params(self, **kwargs):
@@ -21,9 +30,18 @@ class Scenario(BaseScenario):
         self.package_length = kwargs.get("package_length", 0.15)
         self.package_mass = kwargs.get("package_mass", 50)
 
+        self.observe_other_agents = kwargs.get("observe_other_agents", False)
+        # Can set to number > n_packages to have "empty" packages in observation
+        # for training on different number of packages
+        self.observe_n_packages = kwargs.get("observe_n_packages", self.n_packages)
+
         self.goal_radius = kwargs.get("goal_radius", 0.15)
 
         self.agent_radius = kwargs.get("agent_radius", 0.03)
+
+        self.rew_package_on_goal = kwargs.get("rew_package_on_goal", 0)
+        self.rew_all_packages_on_goal = kwargs.get("rew_all_packages_on_goal", 0)
+        self.terminate_on_goal = kwargs.get("terminate_on_goal", True)
 
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
         self.init_params(**kwargs)
@@ -168,34 +186,67 @@ class Scenario(BaseScenario):
                 )
                 package.global_shaping = package_shaping
 
+                if torch.is_tensor(self.rew_package_on_goal):
+                    assert self.rew_package_on_goal.shape[0] == self.world.batch_dim
+                    self.rew[package.on_goal] += self.rew_package_on_goal[package.on_goal]
+                else:
+                    self.rew[package.on_goal] += self.rew_package_on_goal
+            
+            # Check for each batch size if all packages are on goal
+            all_packages_on_goal = torch.stack([package.on_goal for package in self.packages], dim=0).all(dim=0)
+            if any(all_packages_on_goal):
+                if torch.is_tensor(self.rew_all_packages_on_goal):
+                    assert self.rew_all_packages_on_goal.shape[0] == self.world.batch_dim
+                    self.rew[all_packages_on_goal] += self.rew_all_packages_on_goal[all_packages_on_goal]
+                else:
+                    self.rew[all_packages_on_goal] += self.rew_all_packages_on_goal
+
         return self.rew
 
     def observation(self, agent: Agent):
         # get positions of all entities in this agent's reference frame
-        package_obs = []
-        for package in self.packages:
+        assert not torch.is_tensor(self.observe_n_packages) or len(self.observe_n_packages) == 1, "observe_n_packages must be a scalar"
+        all_packages_obs = torch.zeros(self.world.batch_dim, 7 * self.observe_n_packages, device=self.world.device)
+        for i, package in enumerate(self.packages):
+            package_obs = []
             package_obs.append(package.state.pos - package.goal.state.pos)
             package_obs.append(package.state.pos - agent.state.pos)
             package_obs.append(package.state.vel)
             package_obs.append(package.on_goal.unsqueeze(-1))
+            package_obs = torch.cat(package_obs, dim=-1)
+            all_packages_obs[:, i * 7 : (i + 1) * 7] = package_obs
+
+        other_agent_obs = []
+        if self.observe_other_agents:
+            # observe other agent pos and vel
+            for other_agent in [other_agent for other_agent in self.world.agents if other_agent != agent]:
+                other_agent_obs.extend([other_agent.state.pos - agent.state.pos, other_agent.state.vel])
 
         return torch.cat(
             [
                 agent.state.pos,
                 agent.state.vel,
-                *package_obs,
+                all_packages_obs,
+                *other_agent_obs,
             ],
             dim=-1,
         )
 
     def done(self):
-        return torch.all(
-            torch.stack(
-                [package.on_goal for package in self.packages],
-                dim=1,
-            ),
-            dim=-1,
-        )
+        if torch.is_tensor(self.terminate_on_goal):
+            assert all(self.terminate_on_goal) or not any(self.terminate_on_goal), "terminate_on_goal must be either True or False for all environments"
+
+        if (not torch.is_tensor(self.terminate_on_goal) and self.terminate_on_goal) or (
+            torch.is_tensor(self.terminate_on_goal) and all(self.terminate_on_goal)):
+            return torch.all(
+                torch.stack(
+                    [package.on_goal for package in self.packages],
+                    dim=1,
+                ),
+                dim=-1,
+            )
+        else:
+            return torch.zeros(self.world.batch_dim, dtype=torch.bool, device=self.world.device)
 
 
 class HeuristicPolicy(BaseHeuristicPolicy):
@@ -356,4 +407,11 @@ class HeuristicPolicy(BaseHeuristicPolicy):
 
 
 if __name__ == "__main__":
-    render_interactively(__file__, control_two_agents=True)
+    render_interactively(
+        __file__,
+        # n_packages=2,
+        control_two_agents=True,
+        # rew_package_on_goal=1,
+        # rew_all_packages_on_goal=10,
+        # terminate_on_goal=False,
+    )

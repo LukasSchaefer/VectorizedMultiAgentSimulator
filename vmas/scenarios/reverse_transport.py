@@ -220,30 +220,23 @@ class Scenario(BaseScenario):
         return self.rew
 
     def observation(self, agent: Agent):
+        other_agent_obs = []
         if self.observe_other_agents:
-            # observe own pos and vel
-            observe_data = [agent.state.pos, agent.state.vel]
-            # observe other agent pos and vel
+            # observe other agent pos and vel if flag is set
             for other_agent in [other_agent for other_agent in self.world.agents if other_agent != agent]:
-                observe_data.extend([other_agent.state.pos, other_agent.state.vel])
-            # observe package vel and relative pos
-            observe_data.extend([self.package.state.vel, self.package.state.pos - agent.state.pos])
-            # observe package goal relative pos
-            observe_data.append(self.package.state.pos - self.package.goal.state.pos)
-            return torch.cat(observe_data, dim=-1)
-        else:
-            # observe own pos and vel, package vel and relative pos, package goal relative pos
-            # (don't observe other agent pos and vel)
-            return torch.cat(
-                [
-                    agent.state.pos,
-                    agent.state.vel,
-                    self.package.state.vel,
-                    self.package.state.pos - agent.state.pos,
-                    self.package.state.pos - self.package.goal.state.pos,
-                ],
-                dim=-1,
-            )
+                other_agent_obs.extend([other_agent.state.pos - agent.state.pos, other_agent.state.vel])
+        # always observe own pos and vel, package vel and relative pos, package goal relative pos
+        return torch.cat(
+            [
+                agent.state.pos,
+                agent.state.vel,
+                self.package.state.vel,
+                self.package.state.pos - agent.state.pos,
+                self.package.state.pos - self.package.goal.state.pos,
+                *other_agent_obs,
+            ],
+            dim=-1,
+        )
 
     def done(self):
         if torch.is_tensor(self.terminate_on_goal):
@@ -266,4 +259,5 @@ if __name__ == "__main__":
         # package_mass=0.5,
         # rew_on_goal=5,
         # world_drag=DRAG / 2,
+        # observe_other_agents=True,
     )

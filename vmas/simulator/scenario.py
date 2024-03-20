@@ -37,7 +37,7 @@ class BaseScenario(ABC):
     def update_arguments(self, immutables, **kwargs):
         if any(k in kwargs for k in immutables):
             assert all(
-                getattr(self, k) == kwargs[k] for k in immutables if k in kwargs
+                getattr(self, k) == kwargs[k] if not torch.is_tensor(kwargs[k]) else torch.all(getattr(self, k) == kwargs[k]) for k in immutables if k in kwargs
             ), f"Cannot change {immutables} after initialization"
 
         for key, value in kwargs.items():

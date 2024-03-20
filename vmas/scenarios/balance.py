@@ -17,6 +17,7 @@ class Scenario(BaseScenario):
     def init_params(self, **kwargs):
         self.n_agents = kwargs.get("n_agents", 3)
         assert self.n_agents > 1
+        self.observe_other_agents = kwargs.get("observe_other_agents", False)
 
         self.package_mass = kwargs.get("package_mass", 5)
         self.random_package_pos_on_line = kwargs.get("random_package_pos_on_line", True)
@@ -30,6 +31,8 @@ class Scenario(BaseScenario):
 
         self.shaping_factor = kwargs.get("shaping_factor", 100)
         self.fall_reward = kwargs.get("fall_reward", -10)
+        self.rew_on_goal = kwargs.get("rew_on_goal", 0)
+        self.terminate_on_goal = kwargs.get("terminate_on_goal", True)
 
     def make_world(self, batch_dim: int, device: torch.device, **kwargs):
         self.init_params(**kwargs)
@@ -81,9 +84,6 @@ class Scenario(BaseScenario):
         )
         world.add_landmark(self.floor)
 
-        self.pos_rew = torch.zeros(batch_dim, device=device, dtype=torch.float32)
-        self.ground_rew = self.pos_rew.clone()
-
         return world
     
     def update_arguments(self, **kwargs):
@@ -106,9 +106,9 @@ class Scenario(BaseScenario):
             "world_gravity",
             "package_mass",
             "line_mass",
-            "random_package_pos_on_line",
-            "shaping_factor",
-            "fall_reward",
+            # "random_package_pos_on_line",
+            # "shaping_factor",
+            # "fall_reward",
         ]
         
     def reset_world_at(self, env_index: int = None):
@@ -248,24 +248,46 @@ class Scenario(BaseScenario):
         is_first = agent == self.world.agents[0]
 
         if is_first:
-            self.pos_rew[:] = 0
-            self.ground_rew[:] = 0
+            self.rew = torch.zeros(
+                self.world.batch_dim, device=self.world.device, dtype=torch.float32
+            )
 
+            # on goal reward
+            self.package.on_goal = self.world.is_overlapping(self.package, self.package.goal)
+            self.package.color = torch.tensor(
+                Color.RED.value, device=self.world.device, dtype=torch.float32
+            ).repeat(self.world.batch_dim, 1)
+            self.package.color[self.package.on_goal] = torch.tensor(
+                Color.GREEN.value, device=self.world.device, dtype=torch.float32
+            )
+            if torch.is_tensor(self.rew_on_goal):
+                assert self.rew_on_goal.shape[0] == self.world.batch_dim
+                self.rew[self.package.on_goal] += self.rew_on_goal[self.package.on_goal]
+            else:
+                self.rew[self.package.on_goal] += self.rew_on_goal
+
+            # fall / touch ground reward
             self.compute_on_the_ground()
+            self.rew[self.on_the_ground] += self.fall_reward
+
+            # distance reward
             self.package_dist = torch.linalg.vector_norm(
                 self.package.state.pos - self.package.goal.state.pos, dim=1
             )
-
-            self.ground_rew[self.on_the_ground] = self.fall_reward
-
             global_shaping = self.package_dist * self.shaping_factor
-            self.pos_rew = self.global_shaping - global_shaping
+            self.rew[~self.package.on_goal] += self.global_shaping - global_shaping
             self.global_shaping = global_shaping
 
-        return self.ground_rew + self.pos_rew
+        return self.rew
 
     def observation(self, agent: Agent):
         # get positions of all entities in this agent's reference frame
+        other_agent_obs = []
+        if self.observe_other_agents:
+            # observe other agent pos and vel
+            for other_agent in [other_agent for other_agent in self.world.agents if other_agent != agent]:
+                other_agent_obs.extend([other_agent.state.pos - agent.state.pos, other_agent.state.vel])
+
         return torch.cat(
             [
                 agent.state.pos,
@@ -277,18 +299,20 @@ class Scenario(BaseScenario):
                 self.line.state.vel,
                 self.line.state.ang_vel,
                 self.line.state.rot % torch.pi,
+                *other_agent_obs
             ],
             dim=-1,
         )
 
     def done(self):
-        return self.on_the_ground + self.world.is_overlapping(
-            self.package, self.package.goal
-        )
+        if torch.is_tensor(self.terminate_on_goal):
+            assert all(self.terminate_on_goal) or not any(self.terminate_on_goal), "terminate_on_goal must be either True or False for all environments"
 
-    def info(self, agent: Agent):
-        info = {"pos_rew": self.pos_rew, "ground_rew": self.ground_rew}
-        return info
+        if (not torch.is_tensor(self.terminate_on_goal) and self.terminate_on_goal) or (
+            torch.is_tensor(self.terminate_on_goal) and all(self.terminate_on_goal)):
+            return torch.logical_or(self.package.on_goal, self.on_the_ground)
+        else:
+            return self.on_the_ground
 
 
 class HeuristicPolicy(BaseHeuristicPolicy):
@@ -323,8 +347,12 @@ class HeuristicPolicy(BaseHeuristicPolicy):
 if __name__ == "__main__":
     render_interactively(
         __file__,
-        n_agents=3,
-        package_mass=5,
+        n_agents=2,
+        package_mass=0.5,
+        line_mass=1.0,
+        world_gravity=(0.0, -0.01),
         random_package_pos_on_line=True,
         control_two_agents=True,
+        terminate_on_goal=False,
+        rew_on_goal=2,
     )
