@@ -275,7 +275,7 @@ class Scenario(BaseScenario):
                 self.package.state.pos - self.package.goal.state.pos, dim=1
             )
             global_shaping = self.package_dist * self.shaping_factor
-            self.rew[~self.package.on_goal] += self.global_shaping - global_shaping
+            self.rew[~self.package.on_goal] += (self.global_shaping[~self.package.on_goal] - global_shaping[~self.package.on_goal])
             self.global_shaping = global_shaping
 
         return self.rew
