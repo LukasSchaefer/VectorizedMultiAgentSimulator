@@ -235,9 +235,9 @@ class Scenario(BaseScenario):
                     other_agent.state.pos - agent.state.pos, dim=1
                 )
                 if self.partial_observability:
-                    other_agent_in_obs_range = other_agent_dist_to_agent <= self.observation_range
+                    other_agent_in_obs_range = (other_agent_dist_to_agent <= self.observation_range).unsqueeze(-1)
                 else:
-                    other_agent_in_obs_range = torch.ones_like(other_agent_dist_to_agent)
+                    other_agent_in_obs_range = torch.ones_like(other_agent_dist_to_agent).unsqueeze(-1)
                 values = [
                     (other_agent.state.pos - agent.state.pos) * other_agent_in_obs_range,
                     other_agent.state.vel * other_agent_in_obs_range,
