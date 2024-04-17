@@ -19,6 +19,8 @@ IMMUTABLES = [
     "package_length",
     "package_width",
     "observe_other_agents",
+    "partial_observability",
+    "observation_range",
     "observe_n_packages",
 ]
 
@@ -31,6 +33,8 @@ class Scenario(BaseScenario):
         self.package_mass = kwargs.get("package_mass", 50)
 
         self.observe_other_agents = kwargs.get("observe_other_agents", False)
+        self.partial_observability = kwargs.get("partial_observability", False)
+        self.observation_range = kwargs.get("observation_range", 0.75)
         # Can set to number > n_packages to have "empty" packages in observation
         # for training on different number of packages
         self.observe_n_packages = kwargs.get("observe_n_packages", self.n_packages)
@@ -209,18 +213,36 @@ class Scenario(BaseScenario):
         all_packages_obs = torch.zeros(self.world.batch_dim, 7 * self.observe_n_packages, device=self.world.device)
         for i, package in enumerate(self.packages):
             package_obs = []
+            package_dist_to_agent = torch.linalg.vector_norm(
+                package.state.pos - agent.state.pos, dim=1
+            )
+            if self.partial_observability:
+                package_in_obs_range = package_dist_to_agent <= self.observation_range
+            else:
+                package_in_obs_range = torch.ones_like(package_dist_to_agent)
             package_obs.append(package.state.pos - package.goal.state.pos)
             package_obs.append(package.state.pos - agent.state.pos)
             package_obs.append(package.state.vel)
             package_obs.append(package.on_goal.unsqueeze(-1))
             package_obs = torch.cat(package_obs, dim=-1)
-            all_packages_obs[:, i * 7 : (i + 1) * 7] = package_obs
+            all_packages_obs[:, i * 7 : (i + 1) * 7] = package_obs * package_in_obs_range.unsqueeze(-1)
 
         other_agent_obs = []
         if self.observe_other_agents:
             # observe other agent pos and vel
             for other_agent in [other_agent for other_agent in self.world.agents if other_agent != agent]:
-                other_agent_obs.extend([other_agent.state.pos - agent.state.pos, other_agent.state.vel])
+                other_agent_dist_to_agent = torch.linalg.vector_norm(
+                    other_agent.state.pos - agent.state.pos, dim=1
+                )
+                if self.partial_observability:
+                    other_agent_in_obs_range = other_agent_dist_to_agent <= self.observation_range
+                else:
+                    other_agent_in_obs_range = torch.ones_like(other_agent_dist_to_agent)
+                values = [
+                    (other_agent.state.pos - agent.state.pos) * other_agent_in_obs_range,
+                    other_agent.state.vel * other_agent_in_obs_range,
+                ]
+                other_agent_obs.extend(values)
 
         return torch.cat(
             [
@@ -411,7 +433,10 @@ if __name__ == "__main__":
         __file__,
         # n_packages=2,
         control_two_agents=True,
-        # rew_package_on_goal=1,
+        rew_package_on_goal=1,
         # rew_all_packages_on_goal=10,
-        # terminate_on_goal=False,
+        terminate_on_goal=False,
+        package_mass=0.4,
+        # partial_observability=True,
+        # observe_other_agents=True,
     )
