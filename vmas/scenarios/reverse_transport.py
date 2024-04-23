@@ -14,6 +14,8 @@ from vmas.simulator.utils import Color, DRAG
 IMMUTABLES = [
     "n_agents",
     "observe_other_agents",
+    "partial_observability",
+    "observation_range",
     "agent_radius",
     "goal_radius",
     "package_length",
@@ -27,7 +29,11 @@ class Scenario(BaseScenario):
         self.package_width = kwargs.get("package_width", 0.6)
         self.package_length = kwargs.get("package_length", 0.6)
         self.package_mass = kwargs.get("package_mass", 50)
+
         self.observe_other_agents = kwargs.get("observe_other_agents", False)
+        # if partial_observability is True, the agent can only see the goal within a certain range set by "observation_range"
+        self.partial_observability = kwargs.get("partial_observability", False)
+        self.observation_range = kwargs.get("observation_range", 0.75)
 
         self.agent_radius = kwargs.get("agent_radius", 0.03)
         self.goal_radius = kwargs.get("goal_radius", 0.09)
@@ -226,13 +232,21 @@ class Scenario(BaseScenario):
             for other_agent in [other_agent for other_agent in self.world.agents if other_agent != agent]:
                 other_agent_obs.extend([other_agent.state.pos - agent.state.pos, other_agent.state.vel])
         # always observe own pos and vel, package vel and relative pos, package goal relative pos
+        agent_goal_dist = torch.linalg.vector_norm(
+            self.package.goal.state.pos - agent.state.pos, dim=1
+        )
+        if self.partial_observability:
+            goal_in_obs_range = agent_goal_dist <= self.observation_range
+        else:
+            goal_in_obs_range = torch.ones_like(agent_goal_dist)
+        goal_in_obs_range = goal_in_obs_range.unsqueeze(-1)
         return torch.cat(
             [
                 agent.state.pos,
                 agent.state.vel,
                 self.package.state.vel,
                 self.package.state.pos - agent.state.pos,
-                self.package.state.pos - self.package.goal.state.pos,
+                (self.package.state.pos - self.package.goal.state.pos) * goal_in_obs_range,
                 *other_agent_obs,
             ],
             dim=-1,
@@ -255,6 +269,7 @@ if __name__ == "__main__":
         n_agents=4,
         package_width=0.6,
         package_length=0.6,
+        partial_observability=True,
         # terminate_on_goal=False,
         # package_mass=0.5,
         # rew_on_goal=5,
