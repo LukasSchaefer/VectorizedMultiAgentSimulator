@@ -158,12 +158,10 @@ class Scenario(BaseScenario):
                 and torch.is_tensor(self.package_mass)
                 and self.package_mass.size(-1) == self.n_packages
             ):
-                print(f"Individual package masses: {self.package_mass}")
                 # individiual mass for each package
                 for i, package in enumerate(self.packages):
                     package.mass = self.package_mass[..., i].unsqueeze(-1)
             else:
-                print(f"Global package mass: {self.package_mass}")
                 # same mass for all packages
                 for package in self.packages:
                     package.mass = self.package_mass
