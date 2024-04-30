@@ -211,24 +211,6 @@ class Scenario(BaseScenario):
             occupied_positions=agent_occupied_positions,
         )
 
-        for i, package in enumerate(self.packages):
-            package.on_goal = self.world.is_overlapping(package, package.goal)
-
-            if env_index is None:
-                package.global_shaping = (
-                    torch.linalg.vector_norm(
-                        package.state.pos - package.goal.state.pos, dim=1
-                    )
-                    * self.shaping_factor
-                )
-            else:
-                package.global_shaping[env_index] = (
-                    torch.linalg.vector_norm(
-                        package.state.pos[env_index] - package.goal.state.pos[env_index]
-                    )
-                    * self.shaping_factor
-                )
-
         if self.randomise_n_packages:
             if env_index is None:
                 self.active_packages = self.__get_active_packages(self.world)
@@ -250,6 +232,24 @@ class Scenario(BaseScenario):
                         package._collide[reset_env_index] = False
                         package.color[reset_env_index] = torch.tensor(Color.GRAY.value)
 
+        for i, package in enumerate(self.packages):
+            package.on_goal = self.world.is_overlapping(package, package.goal)
+
+            if env_index is None:
+                package.global_shaping = (
+                    torch.linalg.vector_norm(
+                        package.state.pos - package.goal.state.pos, dim=1
+                    )
+                    * self.shaping_factor
+                )
+            else:
+                package.global_shaping[env_index] = (
+                    torch.linalg.vector_norm(
+                        package.state.pos[env_index] - package.goal.state.pos[env_index]
+                    )
+                    * self.shaping_factor
+                )
+
     def reward(self, agent: Agent):
         is_first = agent == self.world.agents[0]
 
@@ -264,8 +264,11 @@ class Scenario(BaseScenario):
                     package.state.pos - package.goal.state.pos, dim=1
                 )
                 package.on_goal = self.world.is_overlapping(package, package.goal)
-                package.color[package.on_goal] = torch.tensor(
+                package.color[package.on_goal & active_package_mask] = torch.tensor(
                     Color.GREEN.value, device=self.world.device, dtype=torch.float32
+                )
+                package.color[~package.on_goal & active_package_mask] = torch.tensor(
+                    Color.RED.value, device=self.world.device, dtype=torch.float32
                 )
 
                 package_shaping = package.dist_to_goal * self.shaping_factor
@@ -552,13 +555,13 @@ class HeuristicPolicy(BaseHeuristicPolicy):
 if __name__ == "__main__":
     render_interactively(
         __file__,
-        n_packages=1,
-        # randomise_n_packages=True,
+        n_packages=3,
+        randomise_n_packages=True,
         control_two_agents=True,
         rew_package_on_goal=1,
-        # rew_all_packages_on_goal=10,
+        rew_all_packages_on_goal=5,
         terminate_on_goal=False,
-        package_mass=0.4,
+        package_mass=2.0,
+        observe_other_agents=True,
         # partial_observability=True,
-        # observe_other_agents=True,
     )

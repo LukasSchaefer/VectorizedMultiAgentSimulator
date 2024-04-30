@@ -591,7 +591,7 @@ class Entity(TorchVectorizedObject, Observable, ABC):
             value = getattr(self, attr)
             if value is not None and value.dim() < 2:
                 target_dim = 2 if attr == "_gravity" else 1
-                setattr(self, attr, value.reshape(-1, target_dim).expand(batch_dim, -1))
+                setattr(self, attr, value.reshape(-1, target_dim).repeat(batch_dim, 1))
 
     @property
     def is_rendering(self):
