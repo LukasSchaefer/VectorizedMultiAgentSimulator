@@ -231,6 +231,9 @@ class Scenario(BaseScenario):
                         )
                         package._collide[reset_env_index] = False
                         package.color[reset_env_index] = torch.tensor(Color.GRAY.value)
+                    else:
+                        package._collide[reset_env_index] = True
+                        package.color[reset_env_index] = torch.tensor(Color.RED.value)
 
             assert torch.all(
                 self.active_packages.sum(dim=-1) >= 1
