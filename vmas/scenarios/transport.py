@@ -232,6 +232,10 @@ class Scenario(BaseScenario):
                         package._collide[reset_env_index] = False
                         package.color[reset_env_index] = torch.tensor(Color.GRAY.value)
 
+            assert torch.all(
+                self.active_packages.sum(dim=-1) >= 1
+            ), "At least one package must be active for each parallel env"
+
         for i, package in enumerate(self.packages):
             package.on_goal = self.world.is_overlapping(package, package.goal)
 
@@ -294,8 +298,8 @@ class Scenario(BaseScenario):
                     package.on_goal | (self.active_packages[:, i].logical_not())
                     for i, package in enumerate(self.packages)
                 ],
-                dim=0,
-            ).all(dim=0)
+                dim=-1,
+            ).all(dim=-1)
             if any(all_packages_on_goal):
                 if torch.is_tensor(self.rew_all_packages_on_goal):
                     assert (
