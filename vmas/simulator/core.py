@@ -633,7 +633,7 @@ class Entity(TorchVectorizedObject, Observable, ABC):
                 if mass is not None
                 else mass
             )
-        self._mass = mass.reshape(self.batch_dim, 1)
+        self._mass = mass.reshape(self.batch_dim, -1)
 
     @property
     def moment_of_inertia(self):
